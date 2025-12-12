@@ -6,7 +6,7 @@
 3) Создай БД: `CREATE DATABASE autodb;` и выйди из psql `\q`
 4) Зайди в папку с бекапом .\bsbd3-project\backups
 5) И востанови данные: `sudo -u postgres pg_restore -d autodb autodb.backup`
-6) Зайди в базу данных `sudo -u postgres` далее в psql `\c autodb`
+6) Зайди в базу данных `sudo -u postgres psql` далее в psql `\c autodb`
 7) Создание роли: `CREATE ROLE app_user WITH LOGIN PASSWORD strongpassword;`
 8) Дать все привилегии на ВСЕ существующие таблицы `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO app_user;`
 9) Запустить main.py
