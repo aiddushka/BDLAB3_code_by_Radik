@@ -7,7 +7,7 @@ def test_session_security():
     """Тестирует безопасность сессий"""
 
     # 1. Тестовый вход
-    login_url = "http://localhost:5000/login"
+    login_url = "http://localhost:59213/login"
     test_data = {
         "username": "testuser",
         "password": "TestPass123!",

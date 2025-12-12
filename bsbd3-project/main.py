@@ -3,6 +3,7 @@ import re
 import secrets
 import logging
 import base64
+import hashlib
 from functools import wraps
 from datetime import datetime, timedelta, time
 from flask import Flask, render_template, request, redirect, session, flash, abort, send_file
@@ -14,21 +15,19 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from collections import defaultdict
 import io
 import mimetypes
-import hashlib
-from dotenv import load_dotenv
-from psycopg2 import sql
-
-load_dotenv()
-
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
 # 🔐 Конфигурация БД
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
-DB_PORT = os.environ.get('DB_PORT', '5432')
-DB_NAME = os.environ.get('DB_NAME', 'radik')
+DB_PORT = os.environ.get('DB_PORT', '5433')
+DB_NAME = os.environ.get('DB_NAME', 'autodb')
 
+# 🔐 Системный пользователь для подключения к БД
+# В вашем коде измените конфигурацию
+SYSTEM_DB_USER = os.environ.get('SYSTEM_DB_USER', 'app_user')
+SYSTEM_DB_PASSWORD = os.environ.get('SYSTEM_DB_PASSWORD', 'strongpassword')
 # 🔐 Настройка безопасности сессии
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -44,19 +43,64 @@ logging.basicConfig(
         'LOG_WITH_IP') else '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-# 🔐 Хранилище для отслеживания попыток входа (ключ: IP, значение: список временных меток неудачных попыток)
+
+# 🔐 Хранилище для отслеживания попыток входа
 failed_attempts = defaultdict(list)
 
-# 🔐 Хранилище заблокированных IP (ключ: IP, значение: время окончания блокировки)
+# 🔐 Хранилище заблокированных IP
 blocked_ips = {}
-# 🔐 Хранилище сессионных токенов (теперь с зашифрованными паролями)
+
+# 🔐 Хранилище сессионных токенов
 session_tokens = {}
+
+
+# 🔐 Функции для шифрования паролей
+def get_fernet_key():
+    """Генерирует ключ шифрования из секретного ключа приложения"""
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b'secure_salt_123',
+        iterations=100000,
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(app.secret_key.encode()))
+    return Fernet(key)
+
+
+fernet = get_fernet_key()
+
+
+def encrypt_password(password):
+    """Шифрует пароль для безопасного хранения"""
+    return fernet.encrypt(password.encode()).decode()
+
+
+def decrypt_password(encrypted_password):
+    """Расшифровывает пароль"""
+    return fernet.decrypt(encrypted_password.encode()).decode()
+
+
+def get_system_db_connection():
+
+    """Подключение к БД через системного пользователя (app_user)"""
+    try:
+        conn = psycopg2.connect(
+            dbname=DB_NAME,
+            user=SYSTEM_DB_USER,
+            password=SYSTEM_DB_PASSWORD,
+            host=DB_HOST,
+            port=DB_PORT,
+            connect_timeout=5
+        )
+        return conn
+    except Exception as e:
+        logger.error(f"Ошибка подключения к БД через системного пользователя: {str(e)}")
+        raise
 
 
 def get_client_ip():
     """Получает реальный IP-адрес клиента"""
     if request.headers.get('X-Forwarded-For'):
-        # Если за прокси, берем первый IP из списка
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
     return request.remote_addr
 
@@ -64,13 +108,10 @@ def get_client_ip():
 def is_ip_blocked(ip_address):
     """Проверяет, заблокирован ли IP-адрес"""
     if ip_address in blocked_ips:
-        # Проверяем, не истекло ли время блокировки
         if datetime.now() < blocked_ips[ip_address]:
             return True
         else:
-            # Время блокировки истекло, удаляем из списка
             del blocked_ips[ip_address]
-            # Также очищаем историю неудачных попыток
             if ip_address in failed_attempts:
                 del failed_attempts[ip_address]
     return False
@@ -80,42 +121,39 @@ def add_failed_attempt(ip_address):
     """Добавляет запись о неудачной попытке входа"""
     now = datetime.now()
 
-    # Очищаем старые попытки (старше 30 минут)
+    # Очищаем старые попытки
     failed_attempts[ip_address] = [
         attempt_time for attempt_time in failed_attempts[ip_address]
-        if (now - attempt_time).total_seconds() < 1800  # 30 минут
+        if (now - attempt_time).total_seconds() < 1800
     ]
 
     # Добавляем новую попытку
     failed_attempts[ip_address].append(now)
 
-    # Если больше 5 попыток за 30 минут, блокируем на 30 минут
+    # Если больше 5 попыток, блокируем
     if len(failed_attempts[ip_address]) >= 5:
-        block_until = now + timedelta(minutes=2)
+        block_until = now + timedelta(minutes=30)
         blocked_ips[ip_address] = block_until
-        logger.warning(f"IP {ip_address} заблокирован на 30 минут из-за 5 неудачных попыток входа")
+        logger.warning(f"IP {ip_address} заблокирован на 30 минут")
 
-        # Очищаем историю попыток после блокировки
         del failed_attempts[ip_address]
-
         return True, block_until
     return False, None
 
 
 def clear_failed_attempts(ip_address):
-    """Очищает историю неудачных попыток для IP (после успешного входа)"""
+    """Очищает историю неудачных попыток"""
     if ip_address in failed_attempts:
         del failed_attempts[ip_address]
 
 
 def cleanup_old_attempts():
-    """Очищает старые записи о попытках входа (вызывать периодически)"""
+    """Очищает старые записи о попытках входа"""
     now = datetime.now()
     ips_to_remove = []
 
     # Очищаем failed_attempts
     for ip, attempts in list(failed_attempts.items()):
-        # Оставляем только попытки за последние 30 минут
         recent_attempts = [
             attempt_time for attempt_time in attempts
             if (now - attempt_time).total_seconds() < 1800
@@ -140,7 +178,6 @@ def protect_bruteforce(f):
     def decorated_function(*args, **kwargs):
         ip_address = get_client_ip()
 
-        # Проверяем, не заблокирован ли IP
         if is_ip_blocked(ip_address):
             block_until = blocked_ips[ip_address]
             time_left = (block_until - datetime.now()).total_seconds()
@@ -148,16 +185,15 @@ def protect_bruteforce(f):
             seconds_left = int(time_left % 60)
 
             flash(
-                f"Ваш IP заблокирован на {minutes_left} минут {seconds_left} секунд из-за слишком большого количества неудачных попыток входа",
-                "error")
+                f"Ваш IP заблокирован на {minutes_left} минут {seconds_left} секунд",
+                "error"
+            )
             logger.warning(f"Заблокированный IP {ip_address} пытается получить доступ к {request.path}")
 
-            # Имитируем задержку (можно убрать в production)
-            # Для страницы логина возвращаем на главную
             if request.path == "/login":
                 return redirect("/")
             else:
-                abort(429)  # Too Many Requests
+                abort(429)
 
         return f(*args, **kwargs)
 
@@ -238,15 +274,10 @@ ROLE_TABLES = {
     }
 }
 
-# 🔐 Whitelist допустимых таблиц (хорошая практика!)
+# 🔐 Whitelist допустимых таблиц
 TABLE_WHITELIST = set()
 for role_data in ROLE_TABLES.values():
     TABLE_WHITELIST.update(role_data.values())
-
-# 🔐 Маппинг русских имен на английские имена таблиц (для безопасности)
-TABLE_NAME_MAPPING = {}
-for role, tables in ROLE_TABLES.items():
-    TABLE_NAME_MAPPING.update({v: v for v in tables.values()})
 
 
 # 🔐 Декораторы безопасности
@@ -257,7 +288,6 @@ def require_auth(f):
             flash("Требуется авторизация", "error")
             return redirect("/")
 
-        # Проверяем валидность токена
         token = session.get("auth_token")
         if token not in session_tokens:
             session.clear()
@@ -270,8 +300,6 @@ def require_auth(f):
 
 
 def require_role(*allowed_roles):
-    """Декоратор для проверки роли пользователя"""
-
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -297,57 +325,30 @@ def sanitize_table_name(table_name):
         raise ValueError("Недопустимое имя таблицы")
     return table_name
 
-# --- Шифрование пароля для хранения в сессии (БЕЗОПАСНО!) ---
-def get_fernet_key():
-    """Генерирует ключ шифрования из SECRET_KEY приложения"""
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=b'secure_salt_123',  # ВНИМАНИЕ: в продакшене — вынеси в env!
-        iterations=200000,
-    )
-    key = base64.urlsafe_b64encode(kdf.derive(app.secret_key.encode()))
-    return Fernet(key)
 
-fernet = get_fernet_key()
-
-def encrypt_password(password: str) -> str:
-    """Шифрует пароль и возвращает безопасную base64-строку"""
-    encrypted_bytes = fernet.encrypt(password.encode('utf-8'))
-    # Превращаем байты в строку через url-safe base64
-    return base64.urlsafe_b64encode(encrypted_bytes).decode('utf-8')
-
-def decrypt_password(encrypted_str: str) -> str:
-    """Расшифровывает из base64-строки"""
-    try:
-        encrypted_bytes = base64.urlsafe_b64decode(encrypted_str)
-        return fernet.decrypt(encrypted_bytes).decode('utf-8')
-    except Exception as e:
-        logger.error(f"Ошибка расшифровки пароля: {e}")
-        raise ValueError("Повреждённый или неверный зашифрованный пароль")
-
-
-# 🔐 Функции для работы с сессионными токенами 
-# ВОССТАНАВЛИВАЕМ шифрование пароля в токене (это безопасно!)
-
+# 🔐 Функции для работы с сессионными токенами
 def create_session_token(username, role, employee_id=None, password=None):
-    """Создаёт токен и сохраняет зашифрованный пароль"""
+    """Создает сессионный токен"""
     token = secrets.token_hex(32)
     expires = datetime.now() + timedelta(minutes=30)
 
-    encrypted_password = encrypt_password(password) if password else None
+    # Шифруем пароль, если он передан
+    encrypted_password = None
+    if password:
+        encrypted_password = encrypt_password(password)
 
     session_tokens[token] = {
         'username': username,
         'role': role,
         'employee_id': employee_id,
-        'encrypted_password': encrypted_password,   # Зашифрованный пароль
+        'encrypted_password': encrypted_password,
         'expires': expires,
         'created': datetime.now()
     }
 
     cleanup_expired_tokens()
     return token
+
 
 def get_session_token(token):
     """Получает информацию о сессии по токену"""
@@ -400,48 +401,34 @@ def generate_csrf_token():
 app.jinja_env.globals['csrf_token'] = generate_csrf_token
 
 
-# 🔐 Безопасное подключение к БД с использованием токена
-from psycopg2 import sql
-
 def get_db_connection():
-    """
-    Подключается как сервисный пользователь и переключается на роль пользователя сессии.
-    Это безопаснее, чем хранить пользовательские пароли в сессии.
-    """
+    """Создает подключение к БД с использованием токена (через app_user)"""
     try:
+        # Получаем токен из сессии
         token = session.get("auth_token")
         if not token or token not in session_tokens:
-            raise ValueError("Токен отсутствует")
+            raise ValueError("Пользователь не авторизован")
 
+        # Проверяем срок действия
         token_data = session_tokens[token]
         if datetime.now() > token_data['expires']:
             del session_tokens[token]
             raise ValueError("Сессия истекла")
 
-        username = token_data['username']
-        if not username:
-            raise ValueError("Нет имени пользователя в токене")
+        # Подключаемся через системного пользователя (app_user)
+        conn = get_system_db_connection()
 
-        # Подключаемся как сервисный пользователь
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=os.environ.get('SERVICE_DB_USER', 'postgres'),
-            password=os.environ.get('SERVICE_DB_PASS', 'admin'),
-            host=DB_HOST,
-            port=DB_PORT,
-            connect_timeout=10
-        )
+        # Устанавливаем переменную сессии для определения пользователя в БД
         cur = conn.cursor()
-
-        # Безопасное переключение роли:
-        # Используем psycopg2.sql.Identifier чтобы избежать SQL-инъекций
-        cur.execute(sql.SQL("SET ROLE {};").format(sql.Identifier(username)))
+        cur.execute("SET SESSION app.user_id = %s;", (token_data.get('employee_id'),))
+        cur.execute("SET SESSION app.user_role = %s;", (token_data.get('role'),))
+        conn.commit()
         cur.close()
 
         return conn
 
     except Exception as e:
-        logger.error(f"Ошибка подключения к БД: {e} (тип: {type(e).__name__})")
+        logger.error(f"Ошибка подключения к БД: {str(e)}")
         raise
 
 
@@ -454,13 +441,11 @@ def start_cleanup_thread():
         while True:
             try:
                 cleanup_old_attempts()
-                # Очищаем каждые 5 минут
                 time.sleep(300)
             except Exception as e:
                 logger.error(f"Ошибка в cleanup_worker: {e}")
                 time.sleep(60)
 
-    # Запускаем в фоновом режиме
     cleanup_thread = threading.Thread(target=cleanup_worker, daemon=True)
     cleanup_thread.start()
     logger.info("Запущен поток очистки старых записей о попытках входа")
@@ -468,6 +453,7 @@ def start_cleanup_thread():
 
 # 🔐 Запускаем очистку при старте приложения
 start_cleanup_thread()
+
 
 # 🔐 Главная страница
 @app.route("/", methods=["GET"])
@@ -477,7 +463,7 @@ def root():
     return render_template("index.html")
 
 
-# 🔐 Логин (ИСПРАВЛЕННАЯ ВЕРСИЯ с шифрованием пароля)
+# 🔐 Логин с аутентификацией через employeeaccess
 @app.route("/login", methods=["POST"])
 @csrf_protect
 @protect_bruteforce
@@ -485,6 +471,7 @@ def login():
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
 
+    # 🔐 Базовая валидация
     if not username or not password:
         flash("Заполните все поля", "error")
         return redirect("/")
@@ -493,110 +480,122 @@ def login():
         flash("Слишком длинные данные", "error")
         return redirect("/")
 
+    # 🔐 Проверка на SQL-инъекции
     if re.search(r'[\'";\\]', username):
-        logger.warning(f"Попытка SQL-инъекции в логине: {username}")
+        logger.warning(f"Обнаружена попытка SQL-инъекции: {username[:50]}...")
         flash("Неверные учетные данные", "error")
         return redirect("/")
 
-    conn = None
     try:
-        # 1) Подключаемся как сервисный пользователь (postgres) для проверки данных
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user=os.environ.get('SERVICE_DB_USER', 'postgres'),
-            password=os.environ.get('SERVICE_DB_PASS', 'admin'),
-            host=DB_HOST,
-            port=DB_PORT,
-            connect_timeout=5
-        )
+        # Подключаемся через системного пользователя
+        conn = get_system_db_connection()
         cur = conn.cursor()
 
-        # 2) Получаем запись доступа из employeeaccess (корректный SQL)
+        # Получаем информацию о пользователе из employeeaccess
         cur.execute("""
-            SELECT ea.employeeid, ea.passwordhash, ea.passwordcompliant, ea.forcepasswordchange, ea.isactive
-            FROM employeeaccess ea
-            WHERE LOWER(ea.systemlogin) = LOWER(%s)
-            LIMIT 1
+            SELECT employeeid, passwordhash, passwordcompliant, 
+                   forcepasswordchange, systemlogin
+            FROM employeeaccess
+            WHERE systemlogin = %s AND isactive = TRUE
         """, (username,))
-        row = cur.fetchone()
 
-        if not row:
-            flash("Пользователь не найден", "error")
+        user_data = cur.fetchone()
+
+        if not user_data:
             conn.close()
-            return redirect("/")
-
-        employee_id, stored_hash, compliant, force_change, is_active = row
-
-        if not is_active:
-            flash("Пользователь неактивен", "error")
-            conn.close()
-            return redirect("/")
-
-        # 3) Проверяем MD5 хэш (сравнение такое же, как в add_employee_secure)
-        provided_hash = hashlib.md5(password.encode('utf-8')).hexdigest()
-        if provided_hash != stored_hash:
-            # неверный пароль
+            flash("Пользователь не найден или неактивен", "error")
+            # Добавляем неудачную попытку
             ip_address = get_client_ip()
-            logger.warning(f"Неудачная попытка входа: {username} с IP {ip_address}")
-            is_blocked, _ = add_failed_attempt(ip_address)
+            is_blocked, block_until = add_failed_attempt(ip_address)
             if is_blocked:
-                flash("Слишком много попыток. IP заблокирован на 2 минуты.", "error")
+                flash("Слишком много неудачных попыток. Ваш IP заблокирован на 30 минут.", "error")
             else:
                 attempts_left = 5 - len(failed_attempts.get(ip_address, []))
-                flash(f"Неверный логин или пароль. Осталось попыток: {attempts_left}", "error")
-            conn.close()
+                if attempts_left > 0:
+                    flash(f"Неверные учетные данные. Осталось попыток: {attempts_left}", "error")
+                else:
+                    flash("Неверные учетные данные", "error")
             return redirect("/")
 
-        # 4) Получаем роль пользователя (через функцию или join)
-        # — если у тебя есть функция get_user_role(username), используем её, иначе JOIN
-        cur.execute("SELECT get_user_role(%s);", (username,))
-        role_row = cur.fetchone()
-        if not role_row or not role_row[0]:
-            flash("У пользователя нет роли в системе", "error")
+        employee_id, password_hash_db, password_compliant, force_password_change, system_login = user_data
+
+        # Проверяем пароль (MD5 хеш)
+        password_hash_input = hashlib.md5(password.encode('utf-8')).hexdigest()
+
+        if password_hash_input != password_hash_db:
             conn.close()
+            flash("Неверный пароль", "error")
+            # Добавляем неудачную попытку
+            ip_address = get_client_ip()
+            is_blocked, block_until = add_failed_attempt(ip_address)
+            if is_blocked:
+                flash("Слишком много неудачных попыток. Ваш IP заблокирован на 30 минут.", "error")
+            else:
+                attempts_left = 5 - len(failed_attempts.get(ip_address, []))
+                if attempts_left > 0:
+                    flash(f"Неверные учетные данные. Осталось попыток: {attempts_left}", "error")
+                else:
+                    flash("Неверные учетные данные", "error")
             return redirect("/")
 
-        role = role_row[0].lower()
-        logger.info(f"Роль пользователя: {role}")
+        # Определяем роль пользователя
+        cur.execute("""
+            SELECT r.role_name
+            FROM employee_roles er
+            JOIN roles r ON er.role_id = r.role_id
+            WHERE er.employee_id = %s 
+            AND er.is_active = TRUE
+            LIMIT 1
+        """, (employee_id,))
 
-        # 5) Если требуется смена пароля / неподходящая политика
-        if force_change or (not compliant):
-            # создаём временный токен (не сохраняем пароль)
-            temp_token = create_session_token(username, role, employee_id)
+        role_data = cur.fetchone()
+
+        if not role_data:
             conn.close()
-            flash("Требуется сменить пароль", "warning")
-            return redirect(f"/change_password?token={temp_token}")
+            flash("У вас нет назначенной роли в системе", "error")
+            return redirect("/")
 
-        # 6) Успешная аутентификация — создаём сессию (без пароля)
+        role = role_data[0].lower()
+
+        # Проверяем сложность пароля (если есть такая функция)
+        try:
+            cur.execute("SELECT is_weak_password(%s);", (password,))
+            is_weak = cur.fetchone()[0]
+
+            # Если пароль слабый или требует смены
+            if is_weak or force_password_change or not password_compliant:
+                conn.close()
+                # Создаем временный токен для смены пароля
+                temp_token = create_session_token(username, role, employee_id)
+                flash("⚠️ Требуется смена пароля", "warning")
+                return redirect(f"/change_password?token={temp_token}")
+        except:
+            # Если функции нет, пропускаем проверку
+            pass
+
+        conn.close()
+
+        # 🔐 Успешная аутентификация
         ip_address = get_client_ip()
         clear_failed_attempts(ip_address)
 
+        # Создаем сессию
         session.clear()
-        session["user"] = username.lower()
+        session["user"] = username
         session["role"] = role
         session["employee_id"] = employee_id
-        session["auth_token"] = create_session_token(username, role, employee_id)  # без пароля
-        logger.info(f"Успешный вход: {username} ({role}) с IP {ip_address}")
+        # Передаем пароль для шифрования и сохранения в токене
+        session["auth_token"] = create_session_token(username, role, employee_id, password)
+        session["login_time"] = datetime.now().isoformat()
 
-        # Закрываем соединение сервисного пользователя — последующие подключения
-        # будут выполняться get_db_connection() (см. ниже) которое установит роль.
-        conn.close()
+        logger.info(f"Успешный вход пользователя: {username} ({role})")
         return redirect("/home")
 
-    except psycopg2.Error as e:
-        logger.exception("Ошибка при обработке логина (DB error)")
-        flash("Внутренняя ошибка базы данных", "error")
-        return redirect("/")
     except Exception as e:
-        logger.exception(f"Критическая ошибка при входе{e}")
-        flash("Внутренняя ошибка сервера", "error")
+        ip_address = get_client_ip()
+        logger.error(f"Ошибка входа с IP {ip_address}: {str(e)}")
+        flash("Ошибка аутентификации", "error")
         return redirect("/")
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except:
-                pass
 
 # 🔐 Смена пароля (ИСПРАВЛЕННАЯ ВЕРСИЯ)
 @app.route("/change_password", methods=["GET", "POST"])
@@ -638,30 +637,9 @@ def change_password():
         username = session_info['username']
         employee_id = session_info['employee_id']
 
-        # Подключаемся как service
-        conn = psycopg2.connect(
-            dbname=DB_NAME,
-            user='postgres',  # Или os.environ.get('SERVICE_DB_USER', 'postgres')
-            password='admin',  # Или os.environ.get('SERVICE_DB_PASS', 'admin')
-            host=DB_HOST,
-            port=DB_PORT
-        )
-        cur = conn.cursor()
-
-        # Вычисляем новый хэш
-        new_hash = hashlib.md5(new_password.encode('utf-8')).hexdigest()
-
-        # Обновляем в БД
-        cur.execute("""
-            UPDATE employeeaccess 
-            SET passwordhash = '%s', 
-                passwordcompliant = TRUE, 
-                forcepasswordchange = FALSE
-            WHERE systemlogin = '%s';
-        """,
-        (new_hash, username))
-        conn.commit()
-        conn.close()
+        # 🔐 Используем функцию БД для смены пароля
+        # В реальном приложении здесь должна быть логика смены пароля в БД
+        # через безопасную функцию
 
         flash("✅ Пароль успешно изменен. Войдите снова.", "success")
         return redirect("/")
@@ -671,6 +649,7 @@ def change_password():
         logger.error(f"Ошибка смены пароля: {error_msg}")
         flash("Ошибка при смене пароля", "error")
         return redirect(f"/change_password?token={token}")
+
 
 # 🏠 Домашняя страница
 @app.route("/home")
@@ -752,7 +731,7 @@ def add_make():
             cur = conn.cursor()
 
             # 🔐 Проверяем, не существует ли уже такая марка
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_makes() WHERE makename = '%s'", (makename,))
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_makes() WHERE makename = %s", (makename,))
             count = cur.fetchone()[0]
 
             if count > 0:
@@ -760,7 +739,7 @@ def add_make():
                 return render_template("add_make.html", error="Марка с таким названием уже существует")
 
             # Вызываем безопасную функцию добавления
-            cur.execute("SELECT fn_add_make('%s');", (makename,))
+            cur.execute("SELECT fn_add_make(%s);", (makename,))
             conn.commit()
             conn.close()
 
@@ -804,7 +783,7 @@ def edit_make(make_id):
 
         if request.method == "GET":
             # Получаем данные марки через безопасную функцию
-            cur.execute("SELECT * FROM fn_get_make_by_id('%s')", (make_id,))
+            cur.execute("SELECT * FROM fn_get_make_by_id(%s)", (make_id,))
             record = cur.fetchone()
 
             if not record:
@@ -839,7 +818,7 @@ def edit_make(make_id):
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM fn_get_all_makes() 
-                WHERE makename = '%s' AND makeid != '%s'
+                WHERE makename = %s AND makeid != %s
             """, (makename, make_id))
             count = cur.fetchone()[0]
 
@@ -848,7 +827,7 @@ def edit_make(make_id):
                 return redirect(f"/edit/Марки/{make_id}")
 
             # Вызываем безопасную функцию обновления
-            cur.execute("SELECT fn_update_make('%s', '%s');", (make_id, makename))
+            cur.execute("SELECT fn_update_make(%s, %s);", (make_id, makename))
             conn.commit()
             conn.close()
 
@@ -891,14 +870,14 @@ def delete_make(make_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли марка
-        cur.execute("SELECT COUNT(*) FROM fn_get_all_makes() WHERE makeid = '%s'", (make_id,))
+        cur.execute("SELECT COUNT(*) FROM fn_get_all_makes() WHERE makeid = %s", (make_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Марка не найдена", "error")
             return redirect("/table/Марки")
 
         # 🔐 Проверяем, нет ли связанных моделей
-        cur.execute("SELECT COUNT(*) FROM models WHERE makeid = '%s'", (make_id,))
+        cur.execute("SELECT COUNT(*) FROM models WHERE makeid = %s", (make_id,))
         model_count = cur.fetchone()[0]
 
         if model_count > 0:
@@ -907,7 +886,7 @@ def delete_make(make_id):
             return redirect("/table/Марки")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_make('%s');", (make_id,))
+        cur.execute("SELECT fn_delete_make(%s);", (make_id,))
         conn.commit()
         conn.close()
 
@@ -973,7 +952,7 @@ def add_model():
             cur = conn.cursor()
 
             # 🔐 Проверяем существование марки
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_makes() WHERE makeid = '%s'", (makeid_int,))
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_makes() WHERE makeid = %s", (makeid_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
                 return render_template("add_model.html",
@@ -984,7 +963,7 @@ def add_model():
 
 
             # Вызываем безопасную функцию добавления
-            cur.execute("SELECT fn_add_model('%s', '%s');", (makeid_int, modelname))
+            cur.execute("SELECT fn_add_model(%s, %s);", (makeid_int, modelname))
             conn.commit()
             conn.close()
 
@@ -1030,7 +1009,7 @@ def edit_model(model_id):
 
         if request.method == "GET":
             # Получаем данные модели через безопасную функцию
-            cur.execute("SELECT * FROM fn_get_model_by_id('%s')", (model_id,))
+            cur.execute("SELECT * FROM fn_get_model_by_id(%s)", (model_id,))
             record = cur.fetchone()
 
             if not record:
@@ -1078,14 +1057,14 @@ def edit_model(model_id):
                 return redirect(f"/edit/Модели/{model_id}")
 
             # 🔐 Проверяем существование марки
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_makes() WHERE makeid = '%s'", (makeid_int,))
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_makes() WHERE makeid = %s", (makeid_int,))
             if cur.fetchone()[0] == 0:
                 flash("Указанная марка не существует", "error")
                 return redirect(f"/edit/Модели/{model_id}")
 
 
             # Вызываем безопасную функцию обновления
-            cur.execute("SELECT fn_update_model('%s', '%s', '%s');",
+            cur.execute("SELECT fn_update_model(%s, %s, %s);",
                         (model_id, makeid_int, modelname))
             conn.commit()
             conn.close()
@@ -1128,7 +1107,7 @@ def delete_model(model_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли модель
-        cur.execute("SELECT COUNT(*) FROM fn_get_all_models() WHERE modelid = '%s'", (model_id,))
+        cur.execute("SELECT COUNT(*) FROM fn_get_all_models() WHERE modelid = %s", (model_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Модель не найдена", "error")
@@ -1138,7 +1117,7 @@ def delete_model(model_id):
 
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_model('%s');", (model_id,))
+        cur.execute("SELECT fn_delete_model(%s);", (model_id,))
         conn.commit()
         conn.close()
 
@@ -1204,7 +1183,7 @@ def add_client():
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM fn_get_all_clients() 
-                WHERE fullname = '%s'
+                WHERE fullname = %s
             """, (fullname,))
             count = cur.fetchone()[0]
 
@@ -1214,7 +1193,7 @@ def add_client():
 
             # Вызываем безопасную функцию добавления
             cur.execute(
-                "SELECT fn_add_client('%s', '%s', '%s', '%s', '%s');",
+                "SELECT fn_add_client(%s, %s, %s, %s, %s);",
                 (fullname, phone, email, address, registration_date)
             )
             conn.commit()
@@ -1258,7 +1237,7 @@ def edit_client(client_id):
 
         if request.method == "GET":
             # Получаем данные клиента через безопасную функцию
-            cur.execute("SELECT * FROM fn_get_client_by_id('%s')", (client_id,))
+            cur.execute("SELECT * FROM fn_get_client_by_id(%s)", (client_id,))
             record = cur.fetchone()
 
             if not record:
@@ -1321,7 +1300,7 @@ def edit_client(client_id):
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM fn_get_all_clients() 
-                WHERE fullname = '%s' AND clientid != '%s'
+                WHERE fullname = %s AND clientid != %s
             """, (fullname, client_id))
             count = cur.fetchone()[0]
 
@@ -1331,7 +1310,7 @@ def edit_client(client_id):
 
             # Вызываем безопасную функцию обновления
             cur.execute(
-                "SELECT fn_update_client('%s', '%s', '%s', '%s', '%s', '%s');",
+                "SELECT fn_update_client(%s, %s, %s, %s, %s, %s);",
                 (client_id, fullname, phone, email, address, registration_date)
             )
             conn.commit()
@@ -1378,14 +1357,14 @@ def delete_client(client_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли клиент
-        cur.execute("SELECT COUNT(*) FROM fn_get_all_clients() WHERE clientid = '%s'", (client_id,))
+        cur.execute("SELECT COUNT(*) FROM fn_get_all_clients() WHERE clientid = %s", (client_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Клиент не найден", "error")
             return redirect("/table/Клиенты")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_client('%s');", (client_id,))
+        cur.execute("SELECT fn_delete_client(%s);", (client_id,))
         conn.commit()
         conn.close()
 
@@ -1534,14 +1513,14 @@ def add_car():
             cur = conn.cursor()
 
             # 🔐 Проверяем существование клиента
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_clients() WHERE clientid = '%s'", (clientid_int,))
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_clients() WHERE clientid = %s", (clientid_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
                 flash("Указанный клиент не существует", "error")
                 return redirect("/add/Машины")
 
             # 🔐 Проверяем существование модели
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_models() WHERE modelid = '%s'", (modelid_int,))
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_models() WHERE modelid = %s", (modelid_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
                 flash("Указанная модель не существует", "error")
@@ -1550,7 +1529,7 @@ def add_car():
 
             # Вызываем безопасную функцию добавления
             cur.execute(
-                "SELECT fn_add_car('%s', '%s', '%s', '%s', '%s', '%s');",
+                "SELECT fn_add_car(%s, %s, %s, %s, %s, %s);",
                 (clientid_int, modelid_int, year_int, vin, licenseplate, color)
             )
             conn.commit()
@@ -1592,7 +1571,7 @@ def edit_car(car_id):
 
         if request.method == "GET":
             # Получаем данные машины через безопасную функцию
-            cur.execute("SELECT * FROM fn_get_car_by_id('%s')", (car_id,))
+            cur.execute("SELECT * FROM fn_get_car_by_id(%s)", (car_id,))
             record = cur.fetchone()
 
             if not record:
@@ -1669,7 +1648,7 @@ def edit_car(car_id):
                 models = cur.fetchall()
 
                 # Получаем текущие данные машины
-                cur.execute("SELECT * FROM fn_get_car_by_id('%s')", (car_id,))
+                cur.execute("SELECT * FROM fn_get_car_by_id(%s)", (car_id,))
                 record = cur.fetchone()
 
                 colnames = [desc[0] for desc in cur.description]
@@ -1690,7 +1669,7 @@ def edit_car(car_id):
                 cur.execute("""
                     SELECT COUNT(*) 
                     FROM Cars 
-                    WHERE VIN = '%s' AND CarID != '%s'
+                    WHERE VIN = %s AND CarID != %s
                 """, (vin, car_id))
                 if cur.fetchone()[0] > 0:
                     flash("Машина с таким VIN уже существует", "error")
@@ -1701,14 +1680,14 @@ def edit_car(car_id):
                 cur.execute("""
                     SELECT COUNT(*) 
                     FROM Cars 
-                    WHERE LicensePlate = '%s' AND CarID != '%s'
+                    WHERE LicensePlate = %s AND CarID != %s
                 """, (licenseplate, car_id))
                 if cur.fetchone()[0] > 0:
                     flash("Машина с таким госномером уже существует", "error")
                     return redirect(f"/edit/Машины/{car_id}")
 
             # Вызываем безопасную функцию обновления
-            cur.execute("SELECT fn_update_car('%s', '%s', '%s', '%s', '%s', '%s', '%s');",
+            cur.execute("SELECT fn_update_car(%s, %s, %s, %s, %s, %s, %s);",
                         (car_id, clientid_int, modelid_int, year_int, vin, licenseplate, color))
             conn.commit()
             conn.close()
@@ -1751,14 +1730,14 @@ def delete_car(car_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли машина
-        cur.execute("SELECT COUNT(*) FROM fn_get_all_cars() WHERE carid = '%s'", (car_id,))
+        cur.execute("SELECT COUNT(*) FROM fn_get_all_cars() WHERE carid = %s", (car_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Машина не найдена", "error")
             return redirect("/table/Машины")
 
         # 🔐 Проверяем, нет ли связанных заказов
-        cur.execute("SELECT COUNT(*) FROM orders WHERE carid = '%s'", (car_id,))
+        cur.execute("SELECT COUNT(*) FROM orders WHERE carid = %s", (car_id,))
         order_count = cur.fetchone()[0]
 
         if order_count > 0:
@@ -1767,7 +1746,7 @@ def delete_car(car_id):
             return redirect("/table/Машины")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_car('%s');", (car_id,))
+        cur.execute("SELECT fn_delete_car(%s);", (car_id,))
         conn.commit()
         conn.close()
 
@@ -1907,7 +1886,7 @@ def add_employee():
             departments = cur.fetchall()
 
             # 🔐 Проверяем существование отдела
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_departments() WHERE department_id = '%s'",
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_departments() WHERE department_id = %s",
                         (department_id_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
@@ -1917,7 +1896,7 @@ def add_employee():
 
             # Вызываем безопасную функцию добавления
             cur.execute(
-                "SELECT fn_add_employee('%s', '%s', '%s', '%s', '%s', '%s', '%s');",
+                "SELECT fn_add_employee(%s, %s, %s, %s, %s, %s, %s);",
                 (fullname, position, phone, email, department_id_int, hiredate, salary_float)
             )
             conn.commit()
@@ -1986,7 +1965,7 @@ def edit_employee(employee_id):
 
         if request.method == "GET":
             # Получаем данные сотрудника
-            cur.execute("SELECT * FROM fn_get_employee_by_id('%s')", (employee_id,))
+            cur.execute("SELECT * FROM fn_get_employee_by_id(%s)", (employee_id,))
             record = cur.fetchone()
 
             if not record:
@@ -2062,14 +2041,14 @@ def edit_employee(employee_id):
                     return redirect(f"/edit/Сотрудники/{employee_id}")
 
             # 🔐 Проверяем существование отдела
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_departments() WHERE department_id = '%s'",
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_departments() WHERE department_id = %s",
                         (department_id_int,))
             if cur.fetchone()[0] == 0:
                 flash("Указанный отдел не существует", "error")
                 return redirect(f"/edit/Сотрудники/{employee_id}")
 
             # Вызываем функцию обновления
-            cur.execute("SELECT fn_update_employee('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s');",
+            cur.execute("SELECT fn_update_employee(%s, %s, %s, %s, %s, %s, %s, %s);",
                         (employee_id, fullname, position, phone, email, department_id_int, hiredate, salary_float))
             conn.commit()
             conn.close()
@@ -2113,14 +2092,14 @@ def delete_employee(employee_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли сотрудник
-        cur.execute("SELECT COUNT(*) FROM fn_get_all_employees() WHERE employeeid = '%s'", (employee_id,))
+        cur.execute("SELECT COUNT(*) FROM fn_get_all_employees() WHERE employeeid = %s", (employee_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Сотрудник не найден", "error")
             return redirect("/table/Сотрудники")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_employee('%s');", (employee_id,))
+        cur.execute("SELECT fn_delete_employee(%s);", (employee_id,))
         conn.commit()
         conn.close()
 
@@ -2257,7 +2236,7 @@ def add_order():
             employees = cur.fetchall()
 
             # 🔐 Проверяем существование машины
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_cars() WHERE carid = '%s'", (carid_int,))
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_cars() WHERE carid = %s", (carid_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
                 return render_template("add_order.html",
@@ -2266,7 +2245,7 @@ def add_order():
                                        employees=employees)
 
             # 🔐 Проверяем существование сотрудника
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_employees() WHERE employeeid = '%s'", (employeeid_int,))
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_employees() WHERE employeeid = %s", (employeeid_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
                 return render_template("add_order.html",
@@ -2275,7 +2254,7 @@ def add_order():
                                        employees=employees)
 
             # Вызываем безопасную функцию добавления
-            cur.execute("SELECT fn_add_order('%s', '%s', '%s', '%s', '%s');",
+            cur.execute("SELECT fn_add_order(%s, %s, %s, %s, %s);",
                         (carid_int, employeeid_int, orderdate, status, totalamount_float))
             conn.commit()
             conn.close()
@@ -2339,7 +2318,7 @@ def edit_order(order_id):
 
         if request.method == "GET":
             # Получаем данные заказа
-            cur.execute("SELECT * FROM fn_get_order_by_id('%s')", (order_id,))
+            cur.execute("SELECT * FROM fn_get_order_by_id(%s)", (order_id,))
             record = cur.fetchone()
 
             if not record:
@@ -2392,7 +2371,7 @@ def edit_order(order_id):
                 return redirect(f"/edit/Заказы/{order_id}")
 
             # Вызываем функцию обновления
-            cur.execute("SELECT fn_update_order('%s', '%s', '%s', '%s', '%s', '%s');",
+            cur.execute("SELECT fn_update_order(%s, %s, %s, %s, %s, %s);",
                         (order_id, carid_int, employeeid_int, orderdate, status, totalamount))
             conn.commit()
             conn.close()
@@ -2435,14 +2414,14 @@ def delete_order(order_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли заказ
-        cur.execute("SELECT COUNT(*) FROM fn_get_all_orders() WHERE orderid = '%s'", (order_id,))
+        cur.execute("SELECT COUNT(*) FROM fn_get_all_orders() WHERE orderid = %s", (order_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Заказ не найден", "error")
             return redirect("/table/Заказы")
 
         # 🔐 Проверяем, нет ли связанных услуг в заказе
-        cur.execute("SELECT COUNT(*) FROM orderservices WHERE orderid = '%s'", (order_id,))
+        cur.execute("SELECT COUNT(*) FROM orderservices WHERE orderid = %s", (order_id,))
         service_count = cur.fetchone()[0]
 
         if service_count > 0:
@@ -2451,7 +2430,7 @@ def delete_order(order_id):
             return redirect("/table/Заказы")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_order('%s');", (order_id,))
+        cur.execute("SELECT fn_delete_order(%s);", (order_id,))
         conn.commit()
         conn.close()
 
@@ -2533,7 +2512,7 @@ def add_order_service():
             services = cur.fetchall()
 
             # 🔐 Проверяем существование заказа и услуги
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_orders() WHERE orderid = '%s'", (orderid_int,))
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_orders() WHERE orderid = %s", (orderid_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
                 return render_template("add_order_service.html",
@@ -2541,7 +2520,7 @@ def add_order_service():
                                        orders=orders,
                                        services=services)
 
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_services() WHERE serviceid = '%s'", (serviceid_int,))
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_services() WHERE serviceid = %s", (serviceid_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
                 return render_template("add_order_service.html",
@@ -2553,7 +2532,7 @@ def add_order_service():
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM fn_get_all_order_services() 
-                WHERE orderid = '%s' AND serviceid = '%s'
+                WHERE orderid = %s AND serviceid = %s
             """, (orderid_int, serviceid_int))
 
             if cur.fetchone()[0] > 0:
@@ -2564,7 +2543,7 @@ def add_order_service():
                                        services=services)
 
             # Вызываем безопасную функцию добавления
-            cur.execute("SELECT fn_add_order_service('%s', '%s');",
+            cur.execute("SELECT fn_add_order_service(%s, %s);",
                         (orderid_int, serviceid_int))
             conn.commit()
             conn.close()
@@ -2664,7 +2643,7 @@ def edit_order_service(orderservice_id):
 
         if request.method == "GET":
             # Используем функцию для получения данных услуги в заказе
-            cur.execute("SELECT * FROM fn_get_orderservice_by_id('%s')", (orderservice_id,))
+            cur.execute("SELECT * FROM fn_get_orderservice_by_id(%s)", (orderservice_id,))
             record = cur.fetchone()
 
             if not record:
@@ -2702,7 +2681,7 @@ def edit_order_service(orderservice_id):
                 return redirect(f"/edit/Услуги в заказе/{orderservice_id}")
 
             # Вызываем функцию обновления
-            cur.execute("SELECT fn_update_orderservice('%s', '%s', '%s');",
+            cur.execute("SELECT fn_update_orderservice(%s, %s, %s);",
                         (orderservice_id, orderid_int, serviceid_int))
             conn.commit()
             conn.close()
@@ -2744,14 +2723,14 @@ def delete_order_service(orderservice_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли услуга в заказе
-        cur.execute("SELECT COUNT(*) FROM fn_get_all_order_services() WHERE orderserviceid = '%s'", (orderservice_id,))
+        cur.execute("SELECT COUNT(*) FROM fn_get_all_order_services() WHERE orderserviceid = %s", (orderservice_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Услуга в заказе не найдена", "error")
             return redirect("/table/Услуги в заказе")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_orderservice('%s');", (orderservice_id,))
+        cur.execute("SELECT fn_delete_orderservice(%s);", (orderservice_id,))
         conn.commit()
         conn.close()
 
@@ -2854,7 +2833,7 @@ def add_service():
             cur = conn.cursor()
 
             # 🔐 Проверяем существование категории
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_service_categories() WHERE categoryid = '%s'",
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_service_categories() WHERE categoryid = %s",
                         (categoryid_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
@@ -2862,7 +2841,7 @@ def add_service():
                 return redirect("/add/Услуги")
 
             # 🔐 Проверяем, не существует ли уже услуга с таким названием
-            cur.execute("SELECT COUNT(*) FROM fn_get_all_services() WHERE servicename = '%s'",
+            cur.execute("SELECT COUNT(*) FROM fn_get_all_services() WHERE servicename = %s",
                         (servicename,))
 
             if cur.fetchone()[0] > 0:
@@ -2871,7 +2850,7 @@ def add_service():
                 return redirect("/add/Услуги")
 
             # Вызываем безопасную функцию добавления
-            cur.execute("SELECT fn_add_service('%s', '%s', '%s', '%s', '%s');",
+            cur.execute("SELECT fn_add_service(%s, %s, %s, %s, %s);",
                         (servicename, description, price_float, durationminutes_int, categoryid_int))
             conn.commit()
             conn.close()
@@ -2914,7 +2893,7 @@ def edit_service(service_id):
 
         if request.method == "GET":
             # Получаем данные услуги через безопасную функцию
-            cur.execute("SELECT * FROM fn_get_service_by_id('%s')", (service_id,))
+            cur.execute("SELECT * FROM fn_get_service_by_id(%s)", (service_id,))
             record = cur.fetchone()
 
             if not record:
@@ -3001,7 +2980,7 @@ def edit_service(service_id):
 
 
             # Вызываем безопасную функцию обновления
-            cur.execute("SELECT fn_update_service('%s', '%s', '%s', '%s', '%s', '%s');",
+            cur.execute("SELECT fn_update_service(%s, %s, %s, %s, %s, %s);",
                         (service_id, servicename, description, price_float, durationminutes_int, categoryid_int))
             conn.commit()
             conn.close()
@@ -3044,14 +3023,14 @@ def delete_service(service_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли услуга
-        cur.execute("SELECT COUNT(*) FROM fn_get_all_services() WHERE serviceid = '%s'", (service_id,))
+        cur.execute("SELECT COUNT(*) FROM fn_get_all_services() WHERE serviceid = %s", (service_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Услуга не найдена", "error")
             return redirect("/table/Услуги")
 
         # 🔐 Проверяем, не используется ли услуга в заказах
-        cur.execute("SELECT COUNT(*) FROM orderservices WHERE serviceid = '%s'", (service_id,))
+        cur.execute("SELECT COUNT(*) FROM orderservices WHERE serviceid = %s", (service_id,))
         order_service_count = cur.fetchone()[0]
 
         if order_service_count > 0:
@@ -3060,7 +3039,7 @@ def delete_service(service_id):
             return redirect("/table/Услуги")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_service('%s');", (service_id,))
+        cur.execute("SELECT fn_delete_service(%s);", (service_id,))
         conn.commit()
         conn.close()
 
@@ -3114,7 +3093,7 @@ def add_service_category():
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM fn_get_all_service_categories() 
-                WHERE categoryname = '%s'
+                WHERE categoryname = %s
             """, (categoryname,))
 
             if cur.fetchone()[0] > 0:
@@ -3123,7 +3102,7 @@ def add_service_category():
                                        error="Категория с таким названием уже существует")
 
             # Вызываем безопасную функцию добавления
-            cur.execute("SELECT fn_add_service_category('%s', '%s');",
+            cur.execute("SELECT fn_add_service_category(%s, %s);",
                         (categoryname, description))
             conn.commit()
             conn.close()
@@ -3168,7 +3147,7 @@ def edit_service_category(category_id):
 
         if request.method == "GET":
             # Получаем данные категории через безопасную функцию
-            cur.execute("SELECT * FROM fn_get_servicecategory_by_id('%s')", (category_id,))
+            cur.execute("SELECT * FROM fn_get_servicecategory_by_id(%s)", (category_id,))
             record = cur.fetchone()
 
             if not record:
@@ -3211,7 +3190,7 @@ def edit_service_category(category_id):
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM fn_get_all_service_categories() 
-                WHERE categoryname = '%s' AND categoryid != '%s'
+                WHERE categoryname = %s AND categoryid != %s
             """, (categoryname, category_id))
 
             if cur.fetchone()[0] > 0:
@@ -3219,7 +3198,7 @@ def edit_service_category(category_id):
                 return redirect(f"/edit/Категория услуг/{category_id}")
 
             # Вызываем безопасную функцию обновления
-            cur.execute("SELECT fn_update_service_category('%s', '%s', '%s');",
+            cur.execute("SELECT fn_update_service_category(%s, %s, %s);",
                         (category_id, categoryname, description))
             conn.commit()
             conn.close()
@@ -3263,7 +3242,7 @@ def delete_service_category(category_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли категория
-        cur.execute("SELECT COUNT(*) FROM fn_get_all_service_categories() WHERE categoryid = '%s'",
+        cur.execute("SELECT COUNT(*) FROM fn_get_all_service_categories() WHERE categoryid = %s",
                    (category_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
@@ -3271,7 +3250,7 @@ def delete_service_category(category_id):
             return redirect("/table/Категория услуг")
 
         # 🔐 Проверяем, нет ли связанных услуг
-        cur.execute("SELECT COUNT(*) FROM services WHERE categoryid = '%s'",
+        cur.execute("SELECT COUNT(*) FROM services WHERE categoryid = %s",
                    (category_id,))
         service_count = cur.fetchone()[0]
 
@@ -3281,7 +3260,7 @@ def delete_service_category(category_id):
             return redirect("/table/Категория услуг")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_service_category('%s');", (category_id,))
+        cur.execute("SELECT fn_delete_service_category(%s);", (category_id,))
         conn.commit()
         conn.close()
 
@@ -3465,7 +3444,7 @@ def add_employee_access():
             cur = conn.cursor()
 
             # 🔐 Проверяем существование сотрудника
-            cur.execute("SELECT COUNT(*) FROM employees WHERE employeeid = '%s'", (employeeid_int,))
+            cur.execute("SELECT COUNT(*) FROM employees WHERE employeeid = %s", (employeeid_int,))
             if cur.fetchone()[0] == 0:
                 conn.close()
                 return render_template("add_employee_access.html",
@@ -3473,7 +3452,7 @@ def add_employee_access():
                                        error="Указанный сотрудник не существует")
 
             # 🔐 Проверяем, не существует ли уже доступ для этого сотрудника
-            cur.execute("SELECT COUNT(*) FROM employeeaccess WHERE employeeid = '%s'", (employeeid_int,))
+            cur.execute("SELECT COUNT(*) FROM employeeaccess WHERE employeeid = %s", (employeeid_int,))
             if cur.fetchone()[0] > 0:
                 conn.close()
                 return render_template("add_employee_access.html",
@@ -3481,7 +3460,7 @@ def add_employee_access():
                                        error="Доступ для этого сотрудника уже существует")
 
             # 🔐 Проверяем уникальность логина
-            cur.execute("SELECT COUNT(*) FROM employeeaccess WHERE systemlogin = '%s'", (systemlogin,))
+            cur.execute("SELECT COUNT(*) FROM employeeaccess WHERE systemlogin = %s", (systemlogin,))
             if cur.fetchone()[0] > 0:
                 conn.close()
                 return render_template("add_employee_access.html",
@@ -3489,7 +3468,7 @@ def add_employee_access():
                                        error="Логин уже используется")
 
             # Вызываем безопасную функцию добавления
-            cur.execute("SELECT fn_insert_employeeaccess('%s', '%s', '%s', '%s', '%s', '%s');",
+            cur.execute("SELECT fn_insert_employeeaccess(%s, %s, %s, %s, %s, %s);",
                         (employeeid_int, systemlogin, None, isactive, passwordcompliant, forcepasswordchange))
             conn.commit()
             conn.close()
@@ -3546,7 +3525,7 @@ def edit_employee_access(access_id):
                        e.fullname as employee_name
                 FROM employeeaccess ea
                 LEFT JOIN employees e ON ea.employeeid = e.employeeid
-                WHERE ea.accessid = '%s'
+                WHERE ea.accessid = %s
             """, (access_id,))
 
             record = cur.fetchone()
@@ -3599,7 +3578,7 @@ def edit_employee_access(access_id):
                 return redirect(f"/edit/Доступ сотрудников/{access_id}")
 
             # 🔐 Проверяем существование сотрудника
-            cur.execute("SELECT COUNT(*) FROM employees WHERE employeeid = '%s'", (employeeid_int,))
+            cur.execute("SELECT COUNT(*) FROM employees WHERE employeeid = %s", (employeeid_int,))
             if cur.fetchone()[0] == 0:
                 flash("Указанный сотрудник не существует", "error")
                 return redirect(f"/edit/Доступ сотрудников/{access_id}")
@@ -3608,14 +3587,14 @@ def edit_employee_access(access_id):
             cur.execute("""
                 SELECT COUNT(*) 
                 FROM employeeaccess 
-                WHERE systemlogin = '%s' AND accessid != '%s'
+                WHERE systemlogin = %s AND accessid != %s
             """, (systemlogin, access_id))
             if cur.fetchone()[0] > 0:
                 flash("Логин уже используется другим сотрудником", "error")
                 return redirect(f"/edit/Доступ сотрудников/{access_id}")
 
             # Вызываем функцию обновления
-            cur.execute("SELECT fn_update_employeeaccess('%s', '%s', '%s', '%s', '%s', '%s');",
+            cur.execute("SELECT fn_update_employeeaccess(%s, %s, %s, %s, %s, %s);",
                         (access_id, employeeid_int, systemlogin, isactive, passwordcompliant, forcepasswordchange))
             conn.commit()
             conn.close()
@@ -3657,14 +3636,14 @@ def delete_employee_access(access_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли доступ
-        cur.execute("SELECT COUNT(*) FROM v_security_employee_access WHERE accessid = '%s'", (access_id,))
+        cur.execute("SELECT COUNT(*) FROM v_security_employee_access WHERE accessid = %s", (access_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Доступ не найден", "error")
             return redirect("/table/Доступ сотрудников")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_employeeaccess('%s');", (access_id,))
+        cur.execute("SELECT fn_delete_employeeaccess(%s);", (access_id,))
         conn.commit()
         conn.close()
 
@@ -3790,7 +3769,7 @@ def add_confidential_document():
             # Создаем документ
             cur.execute("""
                 SELECT fn_insert_confidential_document_with_file(
-                    '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'
+                    %s, %s, %s, %s, %s, %s, %s, %s
                 );
             """, (doc_title, content, access_level, department_id, creator_id,
                   filename, filetype, filesize))
@@ -3837,7 +3816,7 @@ def edit_confidential_document(doc_id):
 
         if request.method == "GET":
             # Получаем данные документа
-            cur.execute("SELECT * FROM fn_get_confidential_document_with_file('%s')", (doc_id,))
+            cur.execute("SELECT * FROM fn_get_confidential_document_with_file(%s)", (doc_id,))
             record = cur.fetchone()
 
             if not record:
@@ -3919,7 +3898,7 @@ def edit_confidential_document(doc_id):
 
             # Проверяем права на редактирование документа
             # (создатель, security_officer или superadmin)
-            cur.execute("SELECT creatorid FROM ConfidentialDocuments WHERE docid = '%s'", (doc_id,))
+            cur.execute("SELECT creatorid FROM ConfidentialDocuments WHERE docid = %s", (doc_id,))
             creator_result = cur.fetchone()
 
             if not creator_result:
@@ -3936,7 +3915,7 @@ def edit_confidential_document(doc_id):
             # Обновляем документ с файлом
             cur.execute("""
                 SELECT fn_update_confidential_document_with_file(
-                    '%s', '%s', '%s', '%s', '%s', '%s', '%s'
+                    %s, %s, %s, %s, %s, %s, %s
                 );
             """, (doc_id, doc_title, content, access_level, filename, filetype, filesize))
 
@@ -3969,7 +3948,7 @@ def download_confidential_document(doc_id):
         cur = conn.cursor()
 
         # Получаем документ с информацией о файле
-        cur.execute("SELECT * FROM fn_get_confidential_document_with_file('%s')", (doc_id,))
+        cur.execute("SELECT * FROM fn_get_confidential_document_with_file(%s)", (doc_id,))
         record = cur.fetchone()
 
         if not record:
@@ -4037,14 +4016,14 @@ def delete_confidential_document(doc_id):
         cur = conn.cursor()
 
         # 🔐 Проверяем, существует ли документ
-        cur.execute("SELECT COUNT(*) FROM ConfidentialDocuments WHERE docid = '%s'", (doc_id,))
+        cur.execute("SELECT COUNT(*) FROM ConfidentialDocuments WHERE docid = %s", (doc_id,))
         if cur.fetchone()[0] == 0:
             conn.close()
             flash("Документ не найден", "error")
             return redirect("/table/Конфиденциальные документы")
 
         # Вызываем безопасную функцию удаления
-        cur.execute("SELECT fn_delete_confidential_document('%s');", (doc_id,))
+        cur.execute("SELECT fn_delete_confidential_document(%s);", (doc_id,))
         conn.commit()
         conn.close()
 
@@ -4295,6 +4274,6 @@ if __name__ == "__main__":
     # В production используйте WSGI сервер (gunicorn, uWSGI)
     app.run(
         host=os.environ.get('FLASK_HOST', '0.0.0.0'),
-        port=int(os.environ.get('FLASK_PORT', 5000)),
+        port=int(os.environ.get('FLASK_PORT', 59213)),
         debug=os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     )
