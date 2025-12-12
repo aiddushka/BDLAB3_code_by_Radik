@@ -12,7 +12,9 @@
 9) Запустить main.py
 
 Пароли:
-Wi-fi: BSBD_Lab3 Пароль: 1r2e3w4q
-ssh: ip: 192.168.1.101 пароль root: joo8aaca6ooShi 
+
+* Wi-fi: BSBD_Lab3 Пароль: 1r2e3w4q
+
+* ssh: ip: 192.168.1.101 пароль root: joo8aaca6ooShi 
 
 Пользователи:
