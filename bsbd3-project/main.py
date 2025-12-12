@@ -20,14 +20,14 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
 # 🔐 Конфигурация БД
-DB_HOST = os.environ.get('DB_HOST', 'localhost')
-DB_PORT = os.environ.get('DB_PORT', '5433')
-DB_NAME = os.environ.get('DB_NAME', 'autodb')
+DB_HOST = os.environ.get('DB_HOST')
+DB_PORT = os.environ.get('DB_PORT')
+DB_NAME = os.environ.get('DB_NAME')
 
 # 🔐 Системный пользователь для подключения к БД
 # В вашем коде измените конфигурацию
-SYSTEM_DB_USER = os.environ.get('SYSTEM_DB_USER', 'app_user')
-SYSTEM_DB_PASSWORD = os.environ.get('SYSTEM_DB_PASSWORD', 'strongpassword')
+SYSTEM_DB_USER = os.environ.get('SYSTEM_DB_USER')
+SYSTEM_DB_PASSWORD = os.environ.get('SYSTEM_DB_PASSWORD')
 # 🔐 Настройка безопасности сессии
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
