@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Редактировать клиента{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center mb-20">Редактирование клиента</h1>
+
+    <form method="post">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        {% for col, val in record_data %}
+        <div class="form-group">
+            <label class="form-label">
+                {% if col == 'clientid' %}ID клиента
+                {% elif col == 'fullname' %}ФИО клиента
+                {% elif col == 'phone' %}Телефон
+                {% elif col == 'email' %}Email
+                {% elif col == 'address' %}Адрес
+                {% elif col == 'registrationdate' %}Дата регистрации
+                {% else %}{{ col }}{% endif %}
+            </label>
+
+            {% if col == 'clientid' %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" readonly>
+            {% else %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" {{ 'required' if col == 'fullname' }}>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-success" style="width: 100%">💾 Сохранить изменения</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Клиенты" class="btn btn-dark">← Назад к клиентам</a>
+    </div>
+</div>
+{% endblock %}

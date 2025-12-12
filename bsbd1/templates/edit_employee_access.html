@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Редактировать доступ сотрудника{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <a href="/table/Доступ сотрудников" class="btn btn-dark">← Назад к доступам</a>
+
+    <h1 class="text-center mb-20">Редактирование доступа сотрудника</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <p class="text-{{ category }} text-center">{{ message }}</p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="post">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        {% for col, val in record_data %}
+        <div class="form-group">
+            <label class="form-label">
+                {% if col == 'accessid' %}ID доступа
+                {% elif col == 'employeeid' %}Сотрудник *
+                {% elif col == 'systemlogin' %}Системный логин *
+                {% elif col == 'isactive' %}Активен
+                {% elif col == 'passwordcompliant' %}Пароль соответствует политике
+                {% elif col == 'forcepasswordchange' %}Требовать смену пароля
+                {% elif col == 'employee_name' %}Имя сотрудника
+                {% elif col == 'issuedate' %}Дата выдачи
+                {% elif col == 'access_status' %}Статус доступа
+                {% elif col == 'passwordchangeddate' %}Дата смены пароля
+                {% elif col == 'password_compliance' %}Соответствие пароля
+                {% elif col == 'force_password_change' %}Требование смены пароля
+                {% else %}{{ col }}{% endif %}
+            </label>
+
+            {% if col == 'accessid' %}
+            <input type="text" class="form-control" value="{{ val }}" readonly>
+
+            {% elif col == 'employeeid' %}
+            <select class="form-control" name="{{ col }}" required>
+                <option value="">Выберите сотрудника</option>
+                {% for employee in employees %}
+                <option value="{{ employee[0] }}"
+                        {% if employee[0]|string == val|string %}selected{% endif %}>
+                    {{ employee[1] }}
+                </option>
+                {% endfor %}
+            </select>
+
+            {% elif col == 'isactive' or col == 'passwordcompliant' or col == 'forcepasswordchange' %}
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="{{ col }}" value="true"
+                       {% if val == True or val == 'true' or val == 't' %}checked{% endif %}>
+                <label class="form-check-label">
+                    {{ 'Да' if (val == True or val == 'true' or val == 't') else 'Нет' }}
+                </label>
+            </div>
+
+            {% elif col == 'issuedate' or col == 'passwordchangeddate' %}
+            <input type="text" class="form-control" value="{{ val }}" readonly>
+
+            {% elif col == 'employee_name' or col == 'access_status' or col == 'password_compliance' or col == 'force_password_change' %}
+            <input type="text" class="form-control" value="{{ val }}" readonly>
+
+            {% else %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" required>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <p class="text-muted">* Обязательные поля</p>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">💾 Сохранить изменения</button>
+    </form>
+</div>
+{% endblock %}

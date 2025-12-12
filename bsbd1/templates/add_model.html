@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить модель{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center">Добавление модели</h1>
+
+    {% if error %}
+    <p class="text-error text-center">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">Марка *</label>
+            <select class="form-control" name="makeid" required>
+                <option value="">Выберите марку</option>
+                {% for make in makes %}
+                <option value="{{ make[0] }}">{{ make[1] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Название модели *</label>
+            <input class="form-control" name="modelname" placeholder="Введите название модели" required>
+        </div>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">Сохранить</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Модели" class="btn btn-dark">← Назад к моделям</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить клиента{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center">Добавление клиента</h1>
+
+    {% if error %}
+    <p class="text-error text-center">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">ФИО клиента *</label>
+            <input class="form-control" name="fullname" placeholder="Введите ФИО" required>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Телефон</label>
+            <input class="form-control" name="phone" placeholder="Введите телефон">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-control" name="email" placeholder="Введите email">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Адрес</label>
+            <input class="form-control" name="address" placeholder="Введите адрес">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Дата регистрации</label>
+            <input class="form-control" name="registrationdate" placeholder="ГГГГ-ММ-ДД">
+        </div>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">Сохранить</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Клиенты" class="btn btn-dark">← Назад к клиентам</a>
+    </div>
+</div>
+{% endblock %}

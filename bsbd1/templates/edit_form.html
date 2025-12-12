@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Редактирование записи в "{{ table }}"</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f7f8fa; margin: 40px; }
+        h1 { text-align: center; margin-bottom: 30px; }
+        form {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        label { display: block; margin-top: 15px; font-weight: bold; }
+        input {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        button {
+            display: block;
+            width: 100%;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        button:hover { background-color: #2980b9; }
+        .back {
+            display: inline-block;
+            margin-bottom: 20px;
+            text-decoration: none;
+            color: white;
+            background: #34495e;
+            padding: 10px 15px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <a href="/table/{{ table }}" class="back">← Назад</a>
+    <h1>Редактирование записи в "{{ table }}"</h1>
+
+    <form method="post">
+        {% for col, val in record_data %}
+            <label>{{ col }}</label>
+            {% if loop.first %}
+                <input type="text" name="{{ col }}" value="{{ val }}" readonly>
+            {% else %}
+                <input type="text" name="{{ col }}" value="{{ val }}">
+            {% endif %}
+        {% endfor %}
+        <button type="submit">💾 Сохранить изменения</button>
+    </form>
+</body>
+</html>

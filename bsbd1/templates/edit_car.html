@@ -1,0 +1,89 @@
+1. edit_car.html (полностью исправленный)
+{% extends "base.html" %}
+
+{% block title %}Редактировать машину{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <a href="/table/Машины" class="btn btn-dark">← Назад к машинам</a>
+
+    <h1 class="text-center mb-20">Редактирование машины</h1>
+
+    {% if error %}
+    <p class="text-error text-center">{{ error }}</p>
+    {% endif %}
+
+    <form method="post">
+
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="carid" value="{{ car_id }}">
+
+        {% for col, val in record_data %}
+        <div class="form-group">
+
+            <label class="form-label">
+                {% if col == 'carid' %}ID машины
+                {% elif col == 'clientid' %}Клиент
+                {% elif col == 'modelid' %}Модель
+                {% elif col == 'year' %}Год выпуска
+                {% elif col == 'vin' %}VIN номер
+                {% elif col == 'licenseplate' %}Госномер
+                {% elif col == 'color' %}Цвет
+                {% else %}{{ col }}{% endif %}
+            </label>
+
+            {% if col == 'carid' %}
+                <input type="text" class="form-control" value="{{ val }}" readonly>
+
+            {% elif col == 'clientid' %}
+                <select class="form-control" name="clientid" required>
+                    <option value="">Выберите клиента</option>
+                    {% for client in clients %}
+                    <option value="{{ client[0] }}" {% if client[0] == val %}selected{% endif %}>
+                        {{ client[1] }}
+                    </option>
+                    {% endfor %}
+                </select>
+
+            {% elif col == 'modelid' %}
+                <select class="form-control" name="modelid" required>
+                    <option value="">Выберите модель</option>
+                    {% for model in models %}
+                    <option value="{{ model[0] }}" {% if model[0] == val %}selected{% endif %}>
+                        {{ model[2] }} ({{ model[1] }})
+                    </option>
+                    {% endfor %}
+                </select>
+
+            {% elif col == 'year' %}
+                <input type="number" class="form-control" name="year"
+                       value="{{ val }}"
+                       min="1900"
+                       max="{{ current_year + 1 }}"
+                       required>
+
+            {% elif col == 'vin' %}
+                <input type="text" class="form-control" name="vin"
+                       value="{{ val if val else '' }}" maxlength="50">
+
+            {% elif col == 'licenseplate' %}
+                <input type="text" class="form-control" name="licenseplate"
+                       value="{{ val if val else '' }}" maxlength="20">
+
+            {% elif col == 'color' %}
+                <input type="text" class="form-control" name="color"
+                       value="{{ val if val else '' }}" maxlength="30">
+
+            {% else %}
+                <input type="text" class="form-control" name="{{ col }}"
+                       value="{{ val if val else '' }}">
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-success" style="width: 100%">
+            💾 Сохранить изменения
+        </button>
+    </form>
+</div>
+{% endblock %}

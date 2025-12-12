@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% set hide_nav = True %}
+
+{% block title %}Ошибка {{ error_code }} - Система управления автосервисом{% endblock %}
+
+{% block content %}
+<div class="center-page">
+    <div class="card center-card text-center" style="max-width: 600px;">
+        <div class="card-header bg-danger text-white py-4">
+            <div class="error-icon mb-3">
+                {% if error_code == 404 %}
+                <i class="fas fa-map-signs fa-4x"></i>
+                {% elif error_code == 403 %}
+                <i class="fas fa-ban fa-4x"></i>
+                {% elif error_code == 500 %}
+                <i class="fas fa-exclamation-triangle fa-4x"></i>
+                {% elif error_code == 401 %}
+                <i class="fas fa-lock fa-4x"></i>
+                {% else %}
+                <i class="fas fa-exclamation-circle fa-4x"></i>
+                {% endif %}
+            </div>
+            <h1 class="h2 mb-0">
+                {% if error_code == 404 %}
+                Страница не найдена
+                {% elif error_code == 403 %}
+                Доступ запрещен
+                {% elif error_code == 500 %}
+                Ошибка сервера
+                {% elif error_code == 401 %}
+                Требуется авторизация
+                {% else %}
+                Произошла ошибка
+                {% endif %}
+            </h1>
+        </div>
+
+        <div class="card-body p-5">
+            <div class="error-code display-1 text-danger mb-4">
+                {{ error_code }}
+            </div>
+
+            <h3 class="mb-4 safe-content">{{ error_message | e }}</h3>
+
+            {% if error_code == 404 %}
+            <p class="text-muted mb-4">
+                Запрошенная страница не существует или была перемещена.<br>
+                Проверьте правильность URL-адреса.
+            </p>
+            {% elif error_code == 403 %}
+            <p class="text-muted mb-4">
+                У вас недостаточно прав для доступа к этой странице.<br>
+                Обратитесь к администратору системы.
+            </p>
+            {% elif error_code == 500 %}
+            <p class="text-muted mb-4">
+                Произошла внутренняя ошибка сервера.<br>
+                Наши специалисты уже работают над решением проблемы.
+            </p>
+            {% elif error_code == 401 %}
+            <p class="text-muted mb-4">
+                Для доступа к этой странице требуется авторизация.<br>
+                Пожалуйста, войдите в систему.
+            </p>
+            {% endif %}
+
+            <div class="d-grid gap-3 mt-5">
+                <a href="/" class="btn btn-primary btn-lg" data-safe-link="true">
+                    <i class="fas fa-home me-2"></i>На главную
+                </a>
+
+                <button onclick="history.back()" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Вернуться назад
+                </button>
+
+                {% if error_code == 401 %}
+                <a href="/login" class="btn btn-success" data-safe-link="true">
+                    <i class="fas fa-sign-in-alt me-2"></i>Войти в систему
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- Техническая информация (только для админов) -->
+            {% if error_details and session.get('role') in ['superadmin', 'security_officer'] %}
+            <div class="mt-5">
+                <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#techDetails">
+                    <i class="fas fa-code me-1"></i>Техническая информация
+                </button>
+
+                <div class="collapse mt-3" id="techDetails">
+                    <div class="card card-body bg-light">
+                        <h6 class="mb-2">Детали ошибки:</h6>
+                        <pre class="small text-muted mb-0 safe-content">{{ error_details | e | truncate(500) }}</pre>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="card-footer text-center py-3">
+            <small class="text-muted">
+                <i class="fas fa-shield-alt me-1"></i> Защищенная система<br>
+                Ошибка зафиксирована в логах безопасности
+            </small>
+        </div>
+    </div>
+</div>
+
+<style nonce="{{ csrf_token() }}">
+    .center-page {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 80vh;
+        padding: 20px;
+    }
+
+    .center-card {
+        width: 100%;
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    }
+
+    .error-icon {
+        color: rgba(255,255,255,0.9);
+    }
+
+    .error-code {
+        font-weight: 800;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
+
+    pre {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 15px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+</style>
+
+<script nonce="{{ csrf_token() }}">
+    document.addEventListener('DOMContentLoaded', function() {
+        // Логирование ошибки
+        if (navigator.sendBeacon) {
+            const errorData = {
+                code: "{{ error_code }}",
+                message: "{{ error_message | e }}",
+                path: window.location.pathname,
+                timestamp: Date.now(),
+                userAgent: navigator.userAgent
+            };
+
+            navigator.sendBeacon('/api/error/log', JSON.stringify(errorData));
+        }
+
+        // Автоматический редирект для некоторых ошибок
+        const errorCode = {{ error_code }};
+
+        if (errorCode === 401) {
+            // Через 5 секунд перенаправляем на страницу входа
+            setTimeout(() => {
+                window.location.href = '/login';
+            }, 5000);
+        } else if (errorCode === 403) {
+            // Показываем предупреждение
+            showSecurityAlert('⚠️ Доступ запрещен. Эта попытка зафиксирована в логах безопасности.');
+        }
+    });
+</script>
+{% endblock %}

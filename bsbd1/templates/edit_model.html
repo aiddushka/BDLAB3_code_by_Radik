@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Редактировать модель{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center mb-20">Редактирование модели</h1>
+
+    <form method="post">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        {% for col, val in record_data %}
+        <div class="form-group">
+            <label class="form-label">
+                {% if col == 'modelid' %}ID модели
+                {% elif col == 'makeid' %}Марка
+                {% elif col == 'modelname' %}Название модели
+                {% else %}{{ col }}{% endif %}
+            </label>
+
+            {% if col == 'modelid' %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" readonly>
+            {% elif col == 'makeid' %}
+            <select class="form-control" name="{{ col }}" required>
+                <option value="">Выберите марку</option>
+                {% for make in makes %}
+                <option value="{{ make[0] }}" {% if val == make[0] %}selected{% endif %}>{{ make[1] }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" required>
+            {% endif %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-success" style="width: 100%">💾 Сохранить изменения</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Модели" class="btn btn-dark">← Назад к моделям</a>
+    </div>
+</div>
+{% endblock %}

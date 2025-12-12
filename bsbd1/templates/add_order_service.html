@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить услугу в заказ{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center">Добавление услуги в заказ</h1>
+
+    {% if error %}
+    <p class="text-error text-center">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">Заказ *</label>
+            <select class="form-control" name="orderid" required>
+                <option value="">Выберите заказ</option>
+                {% for order in orders %}
+                <option value="{{ order[0] }}">Заказ #{{ order[0] }} - {{ order[1] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Услуга *</label>
+            <select class="form-control" name="serviceid" required>
+                <option value="">Выберите услугу</option>
+                {% for service in services %}
+                <option value="{{ service[0] }}">{{ service[1] }} ({{ service[2] }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-success" style="width: 100%">Сохранить</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Услуги в заказе" class="btn btn-dark">← Назад к услугам в заказах</a>
+    </div>
+</div>
+{% endblock %}

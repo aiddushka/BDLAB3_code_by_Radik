@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+
+{% block title %}{{ display_name }}{% endblock %}
+
+{% block content %}
+<a href="/home" class="btn btn-dark mb-20">← Назад</a>
+<div class="card">
+    <h1 class="text-center mb-4">{{ display_name }}</h1>
+
+    {% if error %}
+    <div class="alert alert-danger text-center">{{ error }}</div>
+    {% else %}
+    <div class="text-center mb-20">
+        {% if permissions.create %}
+            <a href="/add/{{ display_name }}" class="btn btn-success">Добавить запись</a>
+        {% endif %}
+
+        {% if permissions.update %}
+            <button class="btn btn-warning" id="editBtn">Редактировать запись</button>
+        {% endif %}
+
+        {% if permissions.delete %}
+            <button class="btn btn-danger" id="deleteBtn">Удалить запись</button>
+        {% endif %}
+    </div>
+
+    <div class="table-container">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" id="csrfToken" value="{{ csrf_token() }}">
+        {{ data|safe }}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// Простая логика выбора строк
+let selectedRowId = null;
+
+// Функция для выделения строки
+function selectRow(row) {
+    // Снимаем выделение со всех строк
+    document.querySelectorAll('tbody tr').forEach(r => {
+        r.classList.remove('selected');
+    });
+
+    // Выделяем новую строку
+    row.classList.add('selected');
+    selectedRowId = row.getAttribute('data-row-id');
+
+    console.log('Выбрана строка с ID:', selectedRowId);
+}
+
+// Обработчик кликов по таблице
+document.addEventListener('DOMContentLoaded', function() {
+    const table = document.querySelector('.data-table');
+    if (!table) return;
+
+    // Добавляем обработчики для строк
+    table.querySelectorAll('tbody tr').forEach(row => {
+        // Делаем строку кликабельной
+        row.style.cursor = 'pointer';
+
+        // Обработчик клика
+        row.addEventListener('click', function(e) {
+            // Игнорируем клики по ссылкам и кнопкам
+            if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON') {
+                return;
+            }
+            if (e.target.closest('a') || e.target.closest('button')) {
+                return;
+            }
+
+            // Выделяем строку
+            selectRow(this);
+        });
+
+        // Эффект наведения
+        row.addEventListener('mouseenter', function() {
+            if (!this.classList.contains('selected')) {
+                this.style.backgroundColor = '#f5f5f5';
+            }
+        });
+
+        row.addEventListener('mouseleave', function() {
+            if (!this.classList.contains('selected')) {
+                this.style.backgroundColor = '';
+            }
+        });
+    });
+
+    // Обработчик кнопки редактирования
+    const editBtn = document.getElementById('editBtn');
+    if (editBtn) {
+        editBtn.addEventListener('click', function() {
+            if (!selectedRowId) {
+                alert('Пожалуйста, выберите строку для редактирования');
+                return;
+            }
+
+            const tableName = "{{ display_name }}";
+            const editUrl = `/edit/${tableName}/${selectedRowId}`;
+            window.location.href = editUrl;
+        });
+    }
+
+    // Обработчик кнопки удаления
+    const deleteBtn = document.getElementById('deleteBtn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function() {
+            if (!selectedRowId) {
+                alert('Пожалуйста, выберите строку для удаления');
+                return;
+            }
+
+            if (!confirm(`Вы уверены, что хотите удалить запись с ID ${selectedRowId}?`)) {
+                return;
+            }
+
+            const tableName = "{{ display_name }}";
+            const deleteUrl = `/delete/${tableName}/${selectedRowId}`;
+            const csrfToken = document.getElementById('csrfToken').value;
+
+            // Отправляем POST запрос с CSRF токеном
+            fetch(deleteUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    '_csrf_token': csrfToken
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Ошибка при удалении записи');
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка:', error);
+                alert('Ошибка при удалении записи');
+            });
+        });
+    }
+});
+    // Обработчик кликов по таблице
+document.addEventListener('DOMContentLoaded', function() {
+    const table = document.querySelector('.data-table');
+    if (!table) return;
+
+    // Устанавливаем data-row-id для каждой строки
+    table.querySelectorAll('tbody tr').forEach(row => {
+        // Находим ячейку с ID (первая ячейка в строке)
+        const idCell = row.cells[0]; // Первая ячейка - это ID
+        if (idCell) {
+            const idText = idCell.textContent.trim();
+            // Удаляем все HTML теги, если они есть (например, <span>)
+            const cleanId = idText.replace(/<[^>]*>/g, '').trim();
+            row.setAttribute('data-row-id', cleanId);
+        }
+    });
+
+    // Добавляем обработчики для строк
+    table.querySelectorAll('tbody tr').forEach(row => {
+        // Делаем строку кликабельной
+        row.style.cursor = 'pointer';
+
+        // Обработчик клика
+        row.addEventListener('click', function(e) {
+            // Игнорируем клики по ссылкам и кнопкам
+            if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON') {
+                return;
+            }
+            if (e.target.closest('a') || e.target.closest('button')) {
+                return;
+            }
+
+            // Выделяем строку
+            selectRow(this);
+        });
+
+        // Эффект наведения
+        row.addEventListener('mouseenter', function() {
+            if (!this.classList.contains('selected')) {
+                this.style.backgroundColor = '#f5f5f5';
+            }
+        });
+
+        row.addEventListener('mouseleave', function() {
+            if (!this.classList.contains('selected')) {
+                this.style.backgroundColor = '';
+            }
+        });
+    });
+
+    // Обработчик кнопки редактирования
+    const editBtn = document.getElementById('editBtn');
+    if (editBtn) {
+        editBtn.addEventListener('click', function() {
+            if (!selectedRowId) {
+                alert('Пожалуйста, выберите строку для редактирования');
+                return;
+            }
+
+            // Убедимся, что ID - число
+            const idNum = parseInt(selectedRowId);
+            if (isNaN(idNum)) {
+                alert('Некорректный ID записи');
+                return;
+            }
+
+            const tableName = "{{ display_name }}";
+            const editUrl = `/edit/${tableName}/${idNum}`;
+            window.location.href = editUrl;
+        });
+    }
+
+    // Обработчик кнопки удаления
+    const deleteBtn = document.getElementById('deleteBtn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function() {
+            if (!selectedRowId) {
+                alert('Пожалуйста, выберите строку для удаления');
+                return;
+            }
+
+            // Убедимся, что ID - число
+            const idNum = parseInt(selectedRowId);
+            if (isNaN(idNum)) {
+                alert('Некорректный ID записи');
+                return;
+            }
+
+            if (!confirm(`Вы уверены, что хотите удалить запись с ID ${idNum}?`)) {
+                return;
+            }
+
+            const tableName = "{{ display_name }}";
+            const deleteUrl = `/delete/${tableName}/${idNum}`;
+            const csrfToken = document.getElementById('csrfToken').value;
+
+            // Отправляем POST запрос с CSRF токеном
+            fetch(deleteUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    '_csrf_token': csrfToken
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Ошибка при удалении записи');
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка:', error);
+                alert('Ошибка при удалении записи');
+            });
+        });
+    }
+});
+</script>
+
+<style>
+.badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: bold;
+    display: inline-block;
+}
+
+/* Стили для выделенной строки */
+tr.selected {
+    background-color: #e8f4fd !important;
+    box-shadow: inset 3px 0 0 #2196f3;
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+/* Убедимся, что строки кликабельны */
+.data-table tbody tr {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.data-table tbody tr:hover {
+    background-color: #f5f5f5;
+}
+
+/* Стили для кнопок */
+.btn-success {
+    background-color: #28a745;
+    color: white;
+    border: 1px solid #28a745;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.btn-warning {
+    background-color: #ffc107;
+    color: #212529;
+    border: 1px solid #ffc107;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+    border: 1px solid #dc3545;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-dark {
+    background-color: #343a40;
+    color: white;
+    border: 1px solid #343a40;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.data-table th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.mb-20 {
+    margin-bottom: 20px;
+}
+
+.mb-4 {
+    margin-bottom: 1.5rem;
+}
+
+.card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+</style>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Редактировать марку{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <a href="/table/Марки" class="btn btn-dark">← Назад к маркам</a>
+
+    <h1 class="text-center mb-20">Редактирование марки</h1>
+
+    <form method="post">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        {% for col, val in record_data %}
+        <div class="form-group">
+            <label class="form-label">
+                {% if col == 'makeid' %}ID марки
+                {% elif col == 'makename' %}Название марки
+                {% else %}{{ col }}{% endif %}
+            </label>
+
+            {% if col == 'makeid' %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" readonly>
+            {% else %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" required>
+            {% endif %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-success" style="width: 100%">💾 Сохранить изменения</button>
+    </form>
+</div>
+{% endblock %}

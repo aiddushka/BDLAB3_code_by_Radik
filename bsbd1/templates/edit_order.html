@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Редактировать услугу в заказе{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <a href="/table/Услуги в заказе" class="btn btn-dark">← Назад к услугам в заказах</a>
+
+    <h1 class="text-center mb-20">Редактирование услуги в заказе</h1>
+
+    <form method="post">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        {% for col, val in record_data %}
+        <div class="form-group">
+            <label class="form-label">
+                {% if col == 'orderserviceid' %}ID услуги в заказе
+                {% elif col == 'orderid' %}Заказ
+                {% elif col == 'serviceid' %}Услуга
+                {% elif col == 'order_info' %}Информация о заказе
+                {% elif col == 'servicename' %}Название услуги
+                {% elif col == 'categoryname' %}Категория услуги
+                {% else %}{{ col }}{% endif %}
+            </label>
+
+            {% if col == 'orderserviceid' %}
+            <input type="text" class="form-control" value="{{ val }}" readonly>
+
+            {% elif col == 'orderid' %}
+            <select class="form-control" name="orderid" required>
+                <option value="">Выберите заказ</option>
+                {% for order in orders %}
+                <option value="{{ order[0] }}" {% if order[0] == val %}selected{% endif %}>
+                    {{ order[1] }}
+                </option>
+                {% endfor %}
+            </select>
+
+            {% elif col == 'serviceid' %}
+            <select class="form-control" name="serviceid" required>
+                <option value="">Выберите услугу</option>
+                {% for service in services %}
+                <option value="{{ service[0] }}" {% if service[0] == val %}selected{% endif %}>
+                    {{ service[1] }} ({{ service[2] }})
+                </option>
+                {% endfor %}
+            </select>
+
+            {% else %}
+            <input type="text" class="form-control" value="{{ val }}" readonly>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-success" style="width: 100%">
+            💾 Сохранить изменения
+        </button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Редактировать конфиденциальный документ{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <a href="/table/Конфиденциальные документы" class="btn btn-dark">← Назад к документам</a>
+
+    <h1 class="text-center mb-20">Редактирование конфиденциального документа</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <p class="text-{{ category }} text-center">{{ message }}</p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="doc_id" value="{{ doc_id }}">
+
+        <div class="form-group">
+            <label class="form-label">ID документа</label>
+            <input type="text" class="form-control" value="{{ doc_id }}" readonly>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Название документа *</label>
+            <input type="text" class="form-control" name="doc_title"
+                   value="{{ document.doctitle if document.doctitle else '' }}" maxlength="200" required>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Создатель</label>
+            <input type="text" class="form-control" value="{{ document.creator_name if document.creator_name else 'Неизвестно' }}" readonly>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Дата создания</label>
+            <input type="text" class="form-control" value="{{ document.createddate if document.createddate else '' }}" readonly>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Содержание</label>
+            <textarea class="form-control" name="content" rows="10">{{ document.content if document.content else '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Уровень доступа *</label>
+            <select class="form-control" name="access_level" required>
+                <option value="">Выберите уровень доступа</option>
+                <option value="Public" {% if document.accesslevel == 'Public' %}selected{% endif %}>Public - Открытый</option>
+                <option value="Internal" {% if document.accesslevel == 'Internal' %}selected{% endif %}>Internal - Внутренний</option>
+                <option value="Confidential" {% if document.accesslevel == 'Confidential' %}selected{% endif %}>Confidential - Конфиденциальный</option>
+                <option value="Strictly" {% if document.accesslevel == 'Strictly' %}selected{% endif %}>Strictly - Строго конфиденциальный</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Текущий файл</label>
+            {% if document.filename and document.filename != 'None' and document.filename != 'null' %}
+                <div class="current-file-info">
+                    <p><strong>Имя файла:</strong> {{ document.filename }}</p>
+                    <p><strong>Тип файла:</strong> {{ document.filetype }}</p>
+                    <p><strong>Размер:</strong>
+                        {% if document.filesize and document.filesize < 1024 %}
+                            {{ document.filesize }} Б
+                        {% elif document.filesize and document.filesize < 1048576 %}
+                            {{ (document.filesize / 1024)|round(1) }} КБ
+                        {% elif document.filesize %}
+                            {{ (document.filesize / 1048576)|round(1) }} МБ
+                        {% else %}
+                            Неизвестно
+                        {% endif %}
+                    </p>
+                    <p><strong>Дата изменения:</strong> {{ document.lastmodified if document.lastmodified else document.createddate }}</p>
+                    <a href="/download/confidential_document/{{ doc_id }}" class="btn btn-sm btn-primary">
+                        📥 Скачать текущий файл
+                    </a>
+                </div>
+            {% else %}
+                <p class="text-muted">Файл не прикреплен</p>
+            {% endif %}
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Заменить файл (максимум 16 МБ)</label>
+            <input type="file" class="form-control" name="confidential_file"
+                   accept=".txt,.pdf,.doc,.docx,.xls,.xlsx,.jpg,.png">
+            <small class="text-muted">Оставьте пустым, чтобы сохранить текущий файл</small>
+        </div>
+
+        <p class="text-muted">* Обязательные поля</p>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">
+            💾 Сохранить изменения
+        </button>
+    </form>
+</div>
+{% endblock %}

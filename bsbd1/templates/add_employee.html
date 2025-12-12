@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить сотрудника{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center">Добавление сотрудника</h1>
+
+    {% if error %}
+    <p class="text-error text-center">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">ФИО сотрудника *</label>
+            <input class="form-control" name="fullname" placeholder="Введите ФИО" maxlength="200" required>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Должность *</label>
+            <input class="form-control" name="position" placeholder="Введите должность" maxlength="100" required>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Телефон</label>
+            <input class="form-control" name="phone" placeholder="Введите телефон" maxlength="20">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" name="email" placeholder="Введите email" maxlength="100">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Отдел *</label>
+            <select class="form-control" name="department_id" required>
+                <option value="">Выберите отдел</option>
+                {% for department in departments %}
+                <option value="{{ department[0] }}">{{ department[1] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Дата приема</label>
+            <input type="date" class="form-control" name="hiredate" placeholder="ГГГГ-ММ-ДД">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Зарплата *</label>
+            <input type="number" step="0.01" min="0" class="form-control" name="salary" placeholder="Введите зарплату" required>
+        </div>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">Сохранить</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Сотрудники" class="btn btn-dark">← Назад к сотрудникам</a>
+    </div>
+</div>
+{% endblock %}

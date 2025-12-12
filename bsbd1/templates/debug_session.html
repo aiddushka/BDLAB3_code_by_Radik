@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Отладка сессии</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .security-good { color: green; font-weight: bold; }
+        .security-bad { color: red; font-weight: bold; }
+        .session-table { width: 100%; border-collapse: collapse; }
+        .session-table th, .session-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .session-table tr:nth-child(even) { background-color: #f2f2f2; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Отладка сессии</h1>
+
+        <div class="section">
+            <h2>Проверка безопасности</h2>
+            <p>
+                <strong>Пароль в сессии:</strong>
+                {% if password_in_session %}
+                    <span class="security-bad">❌ НАЙДЕН - КРИТИЧЕСКАЯ УЯЗВИМОСТЬ!</span>
+                {% else %}
+                    <span class="security-good">✅ НЕ НАЙДЕН - ХОРОШО</span>
+                {% endif %}
+            </p>
+            <p>
+                <strong>Токен аутентификации:</strong>
+                {% if auth_token_valid %}
+                    <span class="security-good">✅ ВАЛИДЕН</span>
+                {% else %}
+                    <span class="security-bad">❌ НЕВАЛИДЕН</span>
+                {% endif %}
+            </p>
+            <p><strong>Активных токенов в системе:</strong> {{ total_tokens }}</p>
+        </div>
+
+        <div class="section">
+            <h2>Содержимое сессии</h2>
+            <table class="session-table">
+                <thead>
+                    <tr>
+                        <th>Ключ</th>
+                        <th>Значение</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for key, value in session_data.items() %}
+                    <tr>
+                        <td><code>{{ key }}</code></td>
+                        <td>
+                            {% if value is string and value|length > 100 %}
+                                <pre>{{ value[:100] }}...</pre>
+                            {% else %}
+                                <pre>{{ value }}</pre>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>Рекомендации по безопасности</h2>
+            <ul>
+                <li>✅ Пароль НЕ должен храниться в сессии</li>
+                <li>✅ Сессионные куки должны быть HttpOnly</li>
+                <li>✅ Сессионные куки должны быть Secure в production</li>
+                <li>✅ Использовать SameSite=Lax/Strict</li>
+                <li>✅ Ограниченное время жизни сессии (30 минут)</li>
+                <li>✅ Хранить только токены, а не пароли</li>
+            </ul>
+
+            <h3>Проверка через консоль браузера:</h3>
+            <pre>
+// Проверить доступность сессионных данных через JavaScript
+console.log("Доступные cookies:", document.cookie);
+
+// Попытка получить сессионные данные (должна вернуть пустую строку для HttpOnly)
+fetch('/debug/session', { credentials: 'same-origin' })
+    .then(r => r.text())
+    .then(html => console.log("Session debug page loaded"));
+
+
+// Проверить наличие пароля в хранилищах браузера
+['localStorage', 'sessionStorage'].forEach(storage => {
+    for (let i = 0; i < window[storage].length; i++) {
+        let key = window[storage].key(i);
+        if (key.toLowerCase().includes('password')) {
+            console.error(ВНИМАНИЕ: пароль найден в ${storage}!);
+        }
+    }
+});
+            </pre>
+        </div>
+
+        <div class="section">
+            <a href="/home">← Назад в панель управления</a> |
+            <a href="/logout">Выйти</a>
+        </div>
+    </div>
+</body>
+</html>

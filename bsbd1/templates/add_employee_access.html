@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить доступ сотрудника{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center">Добавление доступа сотрудника</h1>
+
+    {% if error %}
+    <div class="alert alert-danger text-center">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">Сотрудник *</label>
+            <select class="form-control" name="employeeid" required>
+                <option value="">Выберите сотрудника</option>
+                {% for employee in employees %}
+                <option value="{{ employee[0] }}">{{ employee[1] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Системный логин *</label>
+            <input type="text" class="form-control" name="systemlogin"
+                   placeholder="Введите логин" maxlength="50" required
+                   pattern="[a-zA-Z0-9_]+" title="Только буквы, цифры и подчеркивания">
+            <small class="form-text text-muted">Только буквы, цифры и подчеркивания</small>
+        </div>
+
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="isactive" value="true" checked>
+            <label class="form-check-label">Активен</label>
+        </div>
+
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="passwordcompliant" value="true">
+            <label class="form-check-label">Пароль соответствует политике</label>
+        </div>
+
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="forcepasswordchange" value="true">
+            <label class="form-check-label">Требовать смену пароля</label>
+        </div>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">Создать доступ</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Доступ сотрудников" class="btn btn-dark">← Назад к доступам</a>
+    </div>
+</div>
+{% endblock %}

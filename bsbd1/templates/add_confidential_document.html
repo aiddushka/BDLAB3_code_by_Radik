@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить конфиденциальный документ{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center">Добавление конфиденциального документа</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <p class="text-{{ category }} text-center">{{ message }}</p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">Название документа *</label>
+            <input class="form-control" name="doc_title"
+                   placeholder="Введите название документа" maxlength="200" required>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Содержание (текст) или загрузите файл:</label>
+            <textarea class="form-control" name="content"
+                      placeholder="Введите текст документа или оставьте пустым для загрузки файла"
+                      rows="10"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Загрузить файл (опционально)</label>
+            <input type="file" class="form-control" name="confidential_file">
+            <small class="text-muted">Если загружаете файл, текстовое содержимое будет заменено содержимым файла. Максимум 16 МБ</small>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Уровень доступа *</label>
+            <select class="form-control" name="access_level" required>
+                <option value="">Выберите уровень доступа</option>
+                <option value="Public">Public - Открытый</option>
+                <option value="Internal">Internal - Внутренний</option>
+                <option value="Confidential">Confidential - Конфиденциальный</option>
+                <option value="Strictly">Strictly - Строго конфиденциальный</option>
+            </select>
+        </div>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">Создать документ</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Конфиденциальные документы" class="btn btn-dark">← Назад к документам</a>
+    </div>
+</div>
+{% endblock %}

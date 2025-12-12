@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить заказ{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center">Добавление заказа</h1>
+
+    {% if error %}
+    <p class="text-error text-center">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">Машина *</label>
+            <select class="form-control" name="carid" required>
+                <option value="">Выберите машину</option>
+                {% for car in cars %}
+                <option value="{{ car[0] }}">{{ car[1] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Сотрудник *</label>
+            <select class="form-control" name="employeeid" required>
+                <option value="">Выберите сотрудника</option>
+                {% for employee in employees %}
+                <option value="{{ employee[0] }}">{{ employee[1] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Дата заказа</label>
+            <input type="date" class="form-control" name="orderdate" value="{{ today }}">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Статус</label>
+            <select class="form-control" name="status">
+                <option value="Новый" selected>Новый</option>
+                <option value="В работе">В работе</option>
+                <option value="Выполнен">Выполнен</option>
+                <option value="Отменен">Отменен</option>
+                <option value="Ожидает запчасти">Ожидает запчасти</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Сумма</label>
+            <input type="number" step="0.01" min="0" class="form-control" name="totalamount" placeholder="Введите сумму">
+        </div>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">Сохранить</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Заказы" class="btn btn-dark">← Назад к заказам</a>
+    </div>
+</div>
+
+<script>
+// Устанавливаем сегодняшнюю дату по умолчанию
+document.addEventListener('DOMContentLoaded', function() {
+    const today = new Date().toISOString().split('T')[0];
+    const dateInput = document.querySelector('input[name="orderdate"]');
+    if (dateInput && !dateInput.value) {
+        dateInput.value = today;
+    }
+});
+</script>
+{% endblock %}

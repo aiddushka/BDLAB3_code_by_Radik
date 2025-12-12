@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить марку{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center">Добавление марки</h1>
+
+    {% if error %}
+    <p class="text-error text-center">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">Название марки *</label>
+            <input class="form-control" name="makename" placeholder="Введите название марки" required>
+        </div>
+        <button type="submit" class="btn btn-success" style="width: 100%">Сохранить</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Марки" class="btn btn-dark">← Назад к маркам</a>
+    </div>
+</div>
+{% endblock %}

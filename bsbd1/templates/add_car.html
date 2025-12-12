@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить машину{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center">Добавление машины</h1>
+
+    {% if error %}
+    <p class="text-error text-center">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <div class="form-group">
+            <label class="form-label">Клиент *</label>
+            <select class="form-control" name="clientid" required>
+                <option value="">Выберите клиента</option>
+                {% for client in clients %}
+                <option value="{{ client[0] }}">{{ client[1] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Модель *</label>
+            <select class="form-control" name="modelid" required>
+                <option value="">Выберите модель</option>
+                {% for model in models %}
+                <option value="{{ model[0] }}">{{ model[2] }} ({{ model[1] }})</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Год выпуска *</label>
+            <input type="number" class="form-control" name="year"
+                   placeholder="Введите год выпуска"
+                   min="1900"
+                   max="{{ current_year + 1 }}"
+                   required>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">VIN номер</label>
+            <input class="form-control" name="vin"
+                   placeholder="Введите VIN номер"
+                   maxlength="50">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Госномер</label>
+            <input class="form-control" name="licenseplate"
+                   placeholder="Введите госномер"
+                   maxlength="20">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Цвет</label>
+            <input class="form-control" name="color"
+                   placeholder="Введите цвет"
+                   maxlength="30">
+        </div>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">Сохранить</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Машины" class="btn btn-dark">← Назад к машинам</a>
+    </div>
+</div>
+{% endblock %}

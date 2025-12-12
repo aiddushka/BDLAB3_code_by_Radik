@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Редактировать роль сотрудника{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <h1 class="text-center mb-20">Редактирование роли сотрудника</h1>
+
+    <form method="post">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        {% for col, val in record_data %}
+        <div class="form-group">
+            <label class="form-label">
+                {% if col == 'employee_role_id' %}ID назначения
+                {% elif col == 'employeeid' %}Сотрудник
+                {% elif col == 'role_id' %}Роль
+                {% elif col == 'assigned_by' %}Кто назначил
+                {% elif col == 'assigned_date' %}Дата назначения
+                {% elif col == 'is_active' %}Активна
+                {% else %}{{ col }}{% endif %}
+            </label>
+
+            {% if col == 'employee_role_id' %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" readonly>
+            {% elif col == 'employeeid' %}
+            <select class="form-control" name="{{ col }}" required>
+                <option value="">Выберите сотрудника</option>
+                {% for employee in employees %}
+                <option value="{{ employee[0] }}"
+                        {% if val == employee[0] %}selected{% endif %}>
+                    {{ employee[1] }}
+                </option>
+                {% endfor %}
+            </select>
+            {% elif col == 'role_id' %}
+            <select class="form-control" name="{{ col }}" required>
+                <option value="">Выберите роль</option>
+                {% for role in roles_list %}
+                <option value="{{ role[0] }}"
+                        {% if val == role[0] %}selected{% endif %}>
+                    {{ role[1] }}
+                </option>
+                {% endfor %}
+            </select>
+            {% elif col == 'assigned_by' or col == 'assigned_date' %}
+            <input type="text" class="form-control" value="{{ val }}" readonly>
+            {% elif col == 'is_active' %}
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="{{ col }}" value="true"
+                       {% if val == True or val == 'true' %}checked{% endif %}>
+                <label class="form-check-label">
+                    {{ 'Да' if (val == True or val == 'true') else 'Нет' }}
+                </label>
+            </div>
+            {% else %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" required>
+            {% endif %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-success" style="width: 100%">💾 Сохранить изменения</button>
+    </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Роли сотрудников" class="btn btn-dark">← Назад к ролям сотрудников</a>
+    </div>
+</div>
+{% endblock %}

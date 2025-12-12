@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Редактировать категорию услуг{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <a href="/table/Категории услуг" class="btn btn-dark">← Назад к категориям</a>
+
+    <h1 class="text-center mb-20">Редактирование категории услуг</h1>
+
+    <form method="post">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        {% for col, val in record_data %}
+        <div class="form-group">
+            <label class="form-label">
+                {% if col == 'categoryid' %}ID категории
+                {% elif col == 'categoryname' %}Название категории
+                {% elif col == 'description' %}Описание
+                {% else %}{{ col }}{% endif %}
+            </label>
+
+            {% if col == 'categoryid' %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" readonly>
+            {% elif col == 'description' %}
+            <textarea class="form-control" name="{{ col }}" rows="3">{{ val }}</textarea>
+            {% else %}
+            <input type="text" class="form-control" name="{{ col }}" value="{{ val }}" required>
+            {% endif %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-success" style="width: 100%">💾 Сохранить изменения</button>
+    </form>
+</div>
+{% endblock %}

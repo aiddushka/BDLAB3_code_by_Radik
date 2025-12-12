@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Редактировать сотрудника{% endblock %}
+
+{% block content %}
+<div class="card form-container">
+    <a href="/table/Сотрудники" class="btn btn-dark">← Назад к сотрудникам</a>
+
+    <h1 class="text-center mb-20">Редактирование сотрудника</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <p class="text-{{ category }} text-center">{{ message }}</p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="post">
+        <!-- 🔐 CSRF токен -->
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+
+        <!-- Создаем словарь из record_data для удобного доступа -->
+        {% set employee_data = {} %}
+        {% for col, val in record_data %}
+            {% set _ = employee_data.update({col: val}) %}
+        {% endfor %}
+
+        <div class="form-group">
+            <label class="form-label">ФИО сотрудника *</label>
+            <input type="text" class="form-control" name="fullname"
+                   value="{{ employee_data.fullname if employee_data.fullname else '' }}"
+                   placeholder="Введите ФИО" required>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Должность *</label>
+            <input type="text" class="form-control" name="position"
+                   value="{{ employee_data.position if employee_data.position else '' }}"
+                   placeholder="Введите должность" required>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Телефон</label>
+            <input type="text" class="form-control" name="phone"
+                   value="{{ employee_data.phone if employee_data.phone else '' }}"
+                   placeholder="Введите телефон">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" name="email"
+                   value="{{ employee_data.email if employee_data.email else '' }}"
+                   placeholder="Введите email">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Отдел *</label>
+            <select class="form-control" name="department_id" required>
+                <option value="">Выберите отдел</option>
+                {% for department in departments %}
+                <option value="{{ department[0] }}"
+                        {% if department[0] == employee_data.department_id|int %}selected{% endif %}>
+                    {{ department[1] }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Дата приема</label>
+            <input type="date" class="form-control" name="hiredate"
+                   value="{{ employee_data.hiredate if employee_data.hiredate else '' }}">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Зарплата *</label>
+            <input type="number" step="0.01" min="0" class="form-control" name="salary"
+                   value="{{ employee_data.salary if employee_data.salary else '' }}"
+                   placeholder="Введите зарплату" required>
+        </div>
+
+        <p class="text-muted">* Обязательные поля</p>
+
+        <button type="submit" class="btn btn-success" style="width: 100%">
+            💾 Сохранить изменения
+        </button>
+    </form>
+</div>
+{% endblock %}
