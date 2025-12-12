@@ -2,7 +2,7 @@
 
 1) Загрузи репозиторий к себе: 
 `git clone https://github.com/aiddushka/BDLAB3_code_by_Radik.git`
-2) Зайди в режим psql: `sudo -u postgres`
+2) Зайди в режим psql: `sudo -u postgres psql`
 3) Создай БД: `CREATE DATABASE autodb;` и выйди из psql `\q`
 4) Зайди в папку с бекапом .\bsbd3-project\backups
 5) И востанови данные: `sudo -u postgres pg_restore -d autodb autodb.backup`
