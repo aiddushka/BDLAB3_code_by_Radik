@@ -30,11 +30,13 @@
 -- Импорт ключа
 
 `sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | \`
+
 `sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg`
 
 -- Добавление репозитория для Ubuntu 24.04 (noble)
 
 `echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \`
+
 `sudo tee /etc/apt/sources.list.d/pgdg.list`
 
 `sudo apt update`
