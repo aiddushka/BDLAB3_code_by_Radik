@@ -9,7 +9,11 @@
 6) Зайди в базу данных `sudo -u postgres psql` далее в psql `\c autodb`
 7) Создание роли: `CREATE ROLE app_user WITH LOGIN PASSWORD 'strongpassword';`
 8) Дать все привилегии на ВСЕ существующие таблицы `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO app_user;`
-9) Запустить main.py
+9) 
+* python3 -m venv venv
+* source venv/bin/activate
+* pip install -r requirements.txt
+10) Запустить main.py
 
 # Пароли:
 
