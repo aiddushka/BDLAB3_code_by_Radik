@@ -15,19 +15,23 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from collections import defaultdict
 import io
 import mimetypes
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
 # 🔐 Конфигурация БД
-DB_HOST = os.environ.get('DB_HOST')
-DB_PORT = os.environ.get('DB_PORT')
-DB_NAME = os.environ.get('DB_NAME')
+DB_HOST = os.environ.get('DB_HOST', 'localhost')
+DB_PORT = os.environ.get('DB_PORT', '5432')
+DB_NAME = os.environ.get('DB_NAME', 'autodb')
 
 # 🔐 Системный пользователь для подключения к БД
-# В вашем коде измените конфигурацию
-SYSTEM_DB_USER = os.environ.get('SYSTEM_DB_USER')
-SYSTEM_DB_PASSWORD = os.environ.get('SYSTEM_DB_PASSWORD')
+# В вашем коде измените конфигурацию # РУСТАМ СКАЗАЛ УДАЛИТЬ строка 28!!!!!!!!!!!!!!!!!!1
+SYSTEM_DB_USER = os.environ.get('SYSTEM_DB_USER', 'app_user')
+SYSTEM_DB_PASSWORD = os.environ.get('SYSTEM_DB_PASSWORD', 'strongpassword')
 # 🔐 Настройка безопасности сессии
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -457,10 +461,24 @@ start_cleanup_thread()
 
 # 🔐 Главная страница
 @app.route("/", methods=["GET"])
-def root():
+@csrf_protect
+def landing():
+    """Главная страница автосервиса"""
+    # Если пользователь уже авторизован, перенаправляем на dashboard
     if "user" in session and "auth_token" in session:
         return redirect("/home")
-    return render_template("index.html")
+    return render_template("index.html")  # Главная
+
+
+@app.route("/login", methods=["GET"])
+@protect_bruteforce
+@csrf_protect
+def login_page():
+    """Страница входа в систему"""
+    # Если пользователь уже авторизован, перенаправляем на dashboard
+    if "user" in session and "auth_token" in session:
+        return redirect("/home")
+    return render_template("login.html")  # Форма входа
 
 
 # 🔐 Логин с аутентификацией через employeeaccess
@@ -474,17 +492,17 @@ def login():
     # 🔐 Базовая валидация
     if not username or not password:
         flash("Заполните все поля", "error")
-        return redirect("/")
+        return redirect("/login")  # ИЗМЕНЕНО: было redirect("/")
 
     if len(username) > 50 or len(password) > 100:
         flash("Слишком длинные данные", "error")
-        return redirect("/")
+        return redirect("/login")  # ИЗМЕНЕНО: было redirect("/")
 
     # 🔐 Проверка на SQL-инъекции
     if re.search(r'[\'";\\]', username):
         logger.warning(f"Обнаружена попытка SQL-инъекции: {username[:50]}...")
         flash("Неверные учетные данные", "error")
-        return redirect("/")
+        return redirect("/login")  # ИЗМЕНЕНО: было redirect("/")
 
     try:
         # Подключаемся через системного пользователя
@@ -515,7 +533,7 @@ def login():
                     flash(f"Неверные учетные данные. Осталось попыток: {attempts_left}", "error")
                 else:
                     flash("Неверные учетные данные", "error")
-            return redirect("/")
+            return redirect("/login")  # ИЗМЕНЕНО: было redirect("/")
 
         employee_id, password_hash_db, password_compliant, force_password_change, system_login = user_data
 
@@ -536,7 +554,7 @@ def login():
                     flash(f"Неверные учетные данные. Осталось попыток: {attempts_left}", "error")
                 else:
                     flash("Неверные учетные данные", "error")
-            return redirect("/")
+            return redirect("/login")  # ИЗМЕНЕНО: было redirect("/")
 
         # Определяем роль пользователя
         cur.execute("""
@@ -553,7 +571,7 @@ def login():
         if not role_data:
             conn.close()
             flash("У вас нет назначенной роли в системе", "error")
-            return redirect("/")
+            return redirect("/login")  # ИЗМЕНЕНО: было redirect("/")
 
         role = role_data[0].lower()
 
@@ -595,8 +613,7 @@ def login():
         ip_address = get_client_ip()
         logger.error(f"Ошибка входа с IP {ip_address}: {str(e)}")
         flash("Ошибка аутентификации", "error")
-        return redirect("/")
-
+        return redirect("/login")  # ИЗМЕНЕНО: было redirect("/")
 # 🔐 Смена пароля (ИСПРАВЛЕННАЯ ВЕРСИЯ)
 @app.route("/change_password", methods=["GET", "POST"])
 @csrf_protect
@@ -1396,7 +1413,7 @@ def get_makes_list():
 # 🔐 Безопасное добавление машины
 @app.route("/add/Машины", methods=["GET", "POST"])
 @require_auth
-@require_role("superadmin", "manager", "senior_mechanic")
+@require_role("superadmin", "manager")
 @csrf_protect
 def add_car():
     """Безопасное добавление машины с валидацией и CSRF защитой"""
@@ -1551,7 +1568,7 @@ def add_car():
 # 🔐 Безопасное редактирование машины
 @app.route("/edit/Машины/<int:car_id>", methods=["GET", "POST"])
 @require_auth
-@require_role("superadmin", "manager", "senior_mechanic")
+@require_role("superadmin", "manager")
 @csrf_protect
 def edit_car(car_id):
     """Безопасное редактирование машины с валидацией и CSRF защитой"""
@@ -1768,7 +1785,7 @@ def delete_car(car_id):
 
 @app.route("/add/Сотрудники", methods=["GET", "POST"])
 @require_auth
-@require_role("superadmin", "manager")
+@require_role("superadmin", "manager", "security_officer")
 @csrf_protect
 def add_employee():
     """Безопасное добавление сотрудника с валидацией и CSRF защитой"""
@@ -1944,7 +1961,7 @@ def add_employee():
 # 🔐 Безопасное редактирование сотрудника (упрощённая версия)
 @app.route("/edit/Сотрудники/<int:employee_id>", methods=["GET", "POST"])
 @require_auth
-@require_role("superadmin", "manager")
+@require_role("superadmin", "manager", "security_officer")
 @csrf_protect
 def edit_employee(employee_id):
     """Безопасное редактирование сотрудника"""
@@ -2073,7 +2090,7 @@ def edit_employee(employee_id):
 
 @app.route("/delete/Сотрудники/<int:employee_id>", methods=["POST"])
 @require_auth
-@require_role("superadmin", "manager")
+@require_role("superadmin", "manager", "security_officer")
 @csrf_protect
 def delete_employee(employee_id):
     """Безопасное удаление сотрудника с валидацией и CSRF защитой"""
@@ -2299,25 +2316,27 @@ def add_order():
 # 🔐 Безопасное редактирование заказа
 @app.route("/edit/Заказы/<int:order_id>", methods=["GET", "POST"])
 @require_auth
+@require_role("superadmin", "manager", "senior_mechanic")
 @csrf_protect
 def edit_order(order_id):
-    """Простое редактирование заказа с валидацией"""
+    """Редактирование заказа с учётом роли"""
 
-    # 🔐 Валидация ID
-    try:
-        order_id = int(order_id)
-        if order_id <= 0:
-            abort(400)
-    except (ValueError, TypeError):
+    # ---- Валидация ID ----
+    if not isinstance(order_id, int) or order_id <= 0:
         abort(400)
+
+    role = session.get("role", "")
 
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
+        # ============================================================
+        #                     GET — показать форму
+        # ============================================================
         if request.method == "GET":
-            # Получаем данные заказа
+
             cur.execute("SELECT * FROM fn_get_order_by_id(%s)", (order_id,))
             record = cur.fetchone()
 
@@ -2325,42 +2344,71 @@ def edit_order(order_id):
                 flash("Заказ не найден", "error")
                 return redirect("/table/Заказы")
 
-            # Получаем список машин и сотрудников
+            # Список машин
             cur.execute("SELECT carid, car_info FROM fn_get_all_cars() ORDER BY car_info")
             cars = cur.fetchall()
 
-            cur.execute(
-                "SELECT employeeid, CONCAT(fullname, ' - ', position) AS info FROM fn_get_all_employees() ORDER BY fullname")
+            # Список сотрудников
+            cur.execute("""
+                SELECT employeeid, CONCAT(fullname, ' - ', position)
+                FROM fn_get_all_employees()
+                ORDER BY fullname
+            """)
             employees = cur.fetchall()
 
             colnames = [desc[0] for desc in cur.description]
+
+            cur.close()
             conn.close()
 
-            return render_template("edit_order.html",
-                                   record=record,
-                                   colnames=colnames,
-                                   cars=cars,
-                                   employees=employees,
-                                   order_id=order_id)
+            return render_template(
+                "edit_order.html",
+                record=record,
+                cars=cars,
+                employees=employees,
+                colnames=colnames,
+                order_id=order_id,
+            )
 
-        elif request.method == "POST":
-            # Получаем данные из формы
+        # ============================================================
+        #                        POST — обновление
+        # ============================================================
+        if request.method == "POST":
+
+            if role == "senior_mechanic":
+                status = request.form.get("status", "").strip()
+
+                if not status:
+                    flash("Статус обязателен", "error")
+                    return redirect(f"/edit/Заказы/{order_id}")
+
+                if len(status) > 50:
+                    flash("Статус слишком длинный (макс. 50)", "error")
+                    return redirect(f"/edit/Заказы/{order_id}")
+
+                cur.execute("SELECT fn_update_order_status(%s, %s);", (order_id, status))
+                conn.commit()
+                cur.close()
+                conn.close()
+
+                flash("Статус заказа обновлён", "success")
+                return redirect("/table/Заказы")
+
             carid = request.form.get("carid", "").strip()
             employeeid = request.form.get("employeeid", "").strip()
             orderdate = request.form.get("orderdate", "").strip() or None
             status = request.form.get("status", "").strip() or None
             totalamount = request.form.get("totalamount", "").strip() or None
 
-            # 🔐 Простая валидация
+            # Валидация
             if not carid:
-                flash("Машина является обязательным полем", "error")
+                flash("Машина обязательна", "error")
                 return redirect(f"/edit/Заказы/{order_id}")
 
             if not employeeid:
-                flash("Сотрудник является обязательным полем", "error")
+                flash("Сотрудник обязателен", "error")
                 return redirect(f"/edit/Заказы/{order_id}")
 
-            # 🔐 Валидация числовых полей
             try:
                 carid_int = int(carid)
                 employeeid_int = int(employeeid)
@@ -2370,29 +2418,33 @@ def edit_order(order_id):
                 flash("Некорректные числовые данные", "error")
                 return redirect(f"/edit/Заказы/{order_id}")
 
-            # Вызываем функцию обновления
-            cur.execute("SELECT fn_update_order(%s, %s, %s, %s, %s, %s);",
-                        (order_id, carid_int, employeeid_int, orderdate, status, totalamount))
+            cur.execute(
+                "SELECT fn_update_order(%s, %s, %s, %s, %s, %s);",
+                (order_id, carid_int, employeeid_int, orderdate, status, totalamount),
+            )
+
             conn.commit()
+            cur.close()
             conn.close()
 
-            flash("Заказ успешно обновлен", "success")
+            flash("Заказ обновлён", "success")
             return redirect("/table/Заказы")
 
     except psycopg2.Error as e:
         if conn:
             conn.rollback()
             conn.close()
-        logger.error(f"Ошибка базы данных в edit_order: {str(e)}")
-        flash("Ошибка при обновлении заказа", "error")
+        logger.error(f"Ошибка БД в edit_order: {str(e)}")
+        flash("Ошибка базы данных", "error")
         return redirect(f"/edit/Заказы/{order_id}")
+
     except Exception as e:
         if conn:
             conn.close()
         logger.error(f"Ошибка в edit_order: {str(e)}")
         flash("Внутренняя ошибка сервера", "error")
         return redirect(f"/edit/Заказы/{order_id}")
-# 🔐 Безопасное удаление заказа
+
 @app.route("/delete/Заказы/<int:order_id>", methods=["POST"])
 @require_auth
 @require_role("superadmin", "manager")
@@ -2452,7 +2504,7 @@ def delete_order(order_id):
 # 🔐 Безопасное добавление услуги в заказ
 @app.route("/add/Услуги в заказе", methods=["GET", "POST"])
 @require_auth
-@require_role("superadmin", "manager", "senior_mechanic")
+@require_role("superadmin", "manager")
 @csrf_protect
 def add_order_service():
     """Безопасное добавление услуги в заказ с валидацией и CSRF защитой"""
@@ -2617,6 +2669,7 @@ def add_order_service():
 # ✏️ Редактирование услуги в заказе
 @app.route("/edit/Услуги в заказе/<int:orderservice_id>", methods=["GET", "POST"])
 @require_auth
+@require_role("superadmin", "manager")
 @csrf_protect
 def edit_order_service(orderservice_id):
     """Безопасное редактирование услуги в заказе"""
@@ -2705,7 +2758,7 @@ def edit_order_service(orderservice_id):
 # 🔐 Безопасное удаление услуги в заказе
 @app.route("/delete/Услуги в заказе/<int:orderservice_id>", methods=["POST"])
 @require_auth
-@require_role("superadmin", "manager", "senior_mechanic")
+@require_role("superadmin", "manager")
 @csrf_protect
 def delete_order_service(orderservice_id):
     """Безопасное удаление услуги в заказе с валидацией и CSRF защитой"""
@@ -3283,7 +3336,7 @@ def show_table(name):
     if not name or not isinstance(name, str):
         abort(400, "Неверное имя таблицы")
 
-    role = session.get("role", "junior_employee")
+    role = session.get("role")
 
     # Получаем доступные таблицы для роли
     tables = ROLE_TABLES.get(role, {})
@@ -3393,7 +3446,7 @@ def show_table(name):
 # 🔐 Безопасное добавление доступа сотрудника
 @app.route("/add/Доступ сотрудников", methods=["GET", "POST"])
 @require_auth
-@require_role("security_officer")
+@require_role("security_officer", "superadmin")
 @csrf_protect
 def add_employee_access():
     """Безопасное добавление доступа сотрудника с валидацией и CSRF защитой"""
@@ -3494,7 +3547,7 @@ def add_employee_access():
 # 🔐 Безопасное редактирование доступа сотрудника
 @app.route("/edit/Доступ сотрудников/<int:access_id>", methods=["GET", "POST"])
 @require_auth
-@require_role("security_officer")
+@require_role("security_officer", "superadmin")
 @csrf_protect
 def edit_employee_access(access_id):
     """Безопасное редактирование доступа сотрудника с валидацией и CSRF защитой"""
@@ -3618,7 +3671,7 @@ def edit_employee_access(access_id):
 # 🔐 Безопасное удаление доступа сотрудника
 @app.route("/delete/Доступ сотрудников/<int:access_id>", methods=["POST"])
 @require_auth
-@require_role("security_officer")
+@require_role("security_officer", "superadmin")
 @csrf_protect
 def delete_employee_access(access_id):
     """Безопасное удаление доступа сотрудника с валидацией и CSRF защитой"""
@@ -3671,14 +3724,41 @@ def get_employees_list():
         logger.error(f"Ошибка при получении списка сотрудников: {str(e)}")
         return []
 
-# 📄 ДОБАВЛЕНИЕ КОНФИДЕНЦИАЛЬНОГО ДОКУМЕНТА (ОБЪЕДИНЕННЫЙ)
-import hashlib
-import io
+
+# ==============================
+# 🔐 Настройки проверки файла
+# ==============================
+ALLOWED_EXTENSIONS = {".txt"}
+ALLOWED_MIME = {"text/plain"}
+MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB
 
 
-# 🔐 Безопасное добавление конфиденциального документа
+def is_safe_text_file(filename, mimetype, file_bytes):
+    import magic   # pip install python-magic / python-magic-bin
+    import os
 
+    # Проверка расширения
+    ext = os.path.splitext(filename.lower())[1]
+    if ext not in ALLOWED_EXTENSIONS:
+        return False, "Разрешены только файлы .txt"
 
+    # MIME из запроса
+    if mimetype not in ALLOWED_MIME:
+        return False, f"Неверный MIME-тип: {mimetype}"
+
+    # Проверяем настоящий MIME
+    real_mime = magic.from_buffer(file_bytes, mime=True)
+    if real_mime not in ALLOWED_MIME:
+        return False, f"Файл выглядит как '{real_mime}', а не text/plain"
+
+    # Опасные вставки
+    dangerous_patterns = ["<script", "<?php", "<html", "<iframe", "onload=", "javascript:"]
+    lowered = file_bytes.decode("utf-8", "ignore").lower()
+
+    if any(p in lowered for p in dangerous_patterns):
+        return False, "Файл содержит потенциально вредоносный код"
+
+    return True, ""
 
 # 🔐 Безопасное добавление конфиденциального документа
 @app.route("/add/Конфиденциальные документы", methods=["GET", "POST"])
@@ -3687,7 +3767,7 @@ import io
 def add_confidential_document():
     """Безопасное добавление конфиденциального документа"""
 
-    # Проверяем права на создание документа
+    # Проверяем права
     role = session.get('role', 'junior_employee')
     if role not in ['superadmin', 'security_officer', 'manager', 'senior_mechanic', 'junior_employee']:
         flash("У вас нет прав для создания документов", "error")
@@ -3696,101 +3776,96 @@ def add_confidential_document():
     if request.method == "GET":
         return render_template("add_confidential_document.html")
 
-    if request.method == "POST":
-        conn = None
-        try:
-            # Получаем данные из формы
-            doc_title = request.form.get("doc_title", "").strip()
-            content = request.form.get("content", "").strip()
-            access_level = request.form.get("access_level", "").strip()
+    conn = None
+    try:
+        # Данные формы
+        doc_title = request.form.get("doc_title", "").strip()
+        content = request.form.get("content", "").strip()
+        access_level = request.form.get("access_level", "").strip()
 
-            # Проверяем, загружен ли файл
-            uploaded_file = request.files.get('confidential_file')
+        uploaded_file = request.files.get('confidential_file')
 
-            # 🔐 Валидация входных данных
-            if not doc_title:
-                flash("Название документа является обязательным полем", "error")
+        # Валидация
+        if not doc_title:
+            flash("Название документа является обязательным полем", "error")
+            return redirect("/add/Конфиденциальные документы")
+
+        if len(doc_title) > 200:
+            flash("Название документа слишком длинное", "error")
+            return redirect("/add/Конфиденциальные документы")
+
+        if access_level not in ['Public', 'Internal', 'Confidential', 'Strictly']:
+            flash("Некорректный уровень доступа", "error")
+            return redirect("/add/Конфиденциальные документы")
+
+        # Файл
+        filename = None
+        filetype = 'text/plain'
+        filesize = None
+
+        if uploaded_file and uploaded_file.filename:
+
+            filename = uploaded_file.filename
+            filetype = uploaded_file.content_type or "text/plain"
+
+            uploaded_file.seek(0, 2)
+            filesize = uploaded_file.tell()
+            uploaded_file.seek(0)
+
+            if filesize > MAX_FILE_SIZE:
+                flash("Файл слишком большой (максимум 16 МБ)", "error")
                 return redirect("/add/Конфиденциальные документы")
 
-            if len(doc_title) > 200:
-                flash("Название документа слишком длинное (максимум 200 символов)", "error")
+            file_bytes = uploaded_file.read()
+
+            ok, msg = is_safe_text_file(filename, filetype, file_bytes)
+            if not ok:
+                flash(msg, "error")
                 return redirect("/add/Конфиденциальные документы")
 
-            if not access_level:
-                flash("Уровень доступа является обязательным полем", "error")
-                return redirect("/add/Конфиденциальные документы")
+            # нормализуем текст
+            text = file_bytes.decode("utf-8", errors="ignore")
+            text = text.replace("\r\n", "\n").replace("\r", "\n")
+            while "\n\n\n" in text:
+                text = text.replace("\n\n\n", "\n\n")
 
-            if access_level not in ['Public', 'Internal', 'Confidential', 'Strictly']:
-                flash("Некорректный уровень доступа", "error")
-                return redirect("/add/Конфиденциальные документы")
+            content = text
+        else:
+            filesize = len(content.encode("utf-8"))
 
-            # Если загружен файл, читаем его содержимое
-            filename = None
-            filetype = 'text/plain'
-            filesize = None
+        # БД
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-            if uploaded_file and uploaded_file.filename:
-                filename = uploaded_file.filename
-                filetype = uploaded_file.content_type or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+        cur.execute("SELECT get_current_employee_id();")
+        creator_id = cur.fetchone()[0]
 
-                # Проверяем размер файла (максимум 16MB)
-                uploaded_file.seek(0, 2)
-                filesize = uploaded_file.tell()
-                uploaded_file.seek(0)
+        cur.execute("SELECT get_current_department_id();")
+        department_id = cur.fetchone()[0]
 
-                if filesize > 16 * 1024 * 1024:
-                    flash("Файл слишком большой. Максимальный размер 16 МБ", "error")
-                    return redirect("/add/Конфиденциальные документы")
+        cur.execute("""
+            SELECT fn_insert_confidential_document_with_file(
+                %s, %s, %s, %s, %s, %s, %s, %s
+            );
+        """, (doc_title, content, access_level, department_id, creator_id,
+              filename, filetype, filesize))
 
-                # Читаем содержимое файла
-                if filetype.startswith('text/') or filename.endswith(('.txt', '.csv', '.log', '.ini', '.cfg')):
-                    # Текстовые файлы читаем как текст
-                    content = uploaded_file.read().decode('utf-8', errors='ignore')
-                else:
-                    # Бинарные файлы кодируем в base64
-                    import base64
-                    file_data = uploaded_file.read()
-                    content = base64.b64encode(file_data).decode('utf-8')
-            else:
-                # Используем текстовое содержимое из формы
-                filesize = len(content.encode('utf-8'))
+        conn.commit()
 
-            # Подключаемся к БД
-            conn = get_db_connection()
-            cur = conn.cursor()
+        flash("Конфиденциальный документ успешно создан", "success")
+        return redirect("/table/Конфиденциальные документы")
 
-            # Получаем ID текущего сотрудника и отдела
-            cur.execute("SELECT get_current_employee_id();")
-            creator_id = cur.fetchone()[0]
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Ошибка в add_confidential_document: {str(e)}")
+        flash("Ошибка при создании документа", "error")
+        return redirect("/add/Конфиденциальные документы")
 
-            cur.execute("SELECT get_current_department_id();")
-            department_id = cur.fetchone()[0]
-
-            # Создаем документ
-            cur.execute("""
-                SELECT fn_insert_confidential_document_with_file(
-                    %s, %s, %s, %s, %s, %s, %s, %s
-                );
-            """, (doc_title, content, access_level, department_id, creator_id,
-                  filename, filetype, filesize))
-
-            doc_id = cur.fetchone()[0]
-
-            conn.commit()
+    finally:
+        if conn:
             conn.close()
 
-            flash("Конфиденциальный документ успешно создан", "success")
-            return redirect("/table/Конфиденциальные документы")
-
-        except Exception as e:
-            if conn:
-                conn.rollback()
-            logger.error(f"Ошибка в add_confidential_document: {str(e)}")
-            flash(f"Ошибка при создании документа: {str(e)}", "error")
-            return redirect("/add/Конфиденциальные документы")
-        finally:
-            if conn:
-                conn.close()
 
 
 # 🔐 Безопасное редактирование конфиденциального документа
@@ -3800,22 +3875,19 @@ def add_confidential_document():
 def edit_confidential_document(doc_id):
     """Безопасное редактирование конфиденциального документа"""
 
-    # 🔐 Валидация ID
     try:
         doc_id = int(doc_id)
         if doc_id <= 0:
             abort(400)
-    except (ValueError, TypeError):
+    except:
         abort(400)
 
     conn = None
     try:
-        # Используем безопасное подключение
         conn = get_db_connection()
         cur = conn.cursor()
 
         if request.method == "GET":
-            # Получаем данные документа
             cur.execute("SELECT * FROM fn_get_confidential_document_with_file(%s)", (doc_id,))
             record = cur.fetchone()
 
@@ -3824,116 +3896,105 @@ def edit_confidential_document(doc_id):
                 return redirect("/table/Конфиденциальные документы")
 
             colnames = [desc[0] for desc in cur.description]
-            conn.close()
-
-            # Создаем словарь данных
             document_data = dict(zip(colnames, record))
 
             return render_template("edit_confidential_document.html",
                                    document=document_data,
                                    doc_id=doc_id)
 
-        elif request.method == "POST":
-            # Получаем и валидируем данные из формы
-            doc_title = request.form.get("doc_title", "").strip()
-            content = request.form.get("content", "").strip()
-            access_level = request.form.get("access_level", "").strip()
+        # POST
+        doc_title = request.form.get("doc_title", "").strip()
+        content = request.form.get("content", "").strip()
+        access_level = request.form.get("access_level", "").strip()
 
-            # Проверяем файл
-            uploaded_file = request.files.get('confidential_file')
+        uploaded_file = request.files.get('confidential_file')
 
-            # 🔐 Валидация входных данных
-            if not doc_title:
-                flash("Название документа является обязательным полем", "error")
+        if not doc_title:
+            flash("Название документа является обязательным полем", "error")
+            return redirect(f"/edit/Конфиденциальные документы/{doc_id}")
+
+        if len(doc_title) > 200:
+            flash("Название документа слишком длинное", "error")
+            return redirect(f"/edit/Конфиденциальные документы/{doc_id}")
+
+        if access_level not in ['Public', 'Internal', 'Confidential', 'Strictly']:
+            flash("Некорректный уровень доступа", "error")
+            return redirect(f"/edit/Конфиденциальные документы/{doc_id}")
+
+        filename = None
+        filetype = "text/plain"
+        filesize = None
+
+        if uploaded_file and uploaded_file.filename:
+
+            filename = uploaded_file.filename
+            filetype = uploaded_file.content_type or "text/plain"
+
+            uploaded_file.seek(0, 2)
+            filesize = uploaded_file.tell()
+            uploaded_file.seek(0)
+
+            if filesize > MAX_FILE_SIZE:
+                flash("Файл слишком большой (максимум 16 МБ)", "error")
                 return redirect(f"/edit/Конфиденциальные документы/{doc_id}")
 
-            if len(doc_title) > 200:
-                flash("Название документа слишком длинное (максимум 200 символов)", "error")
+            file_bytes = uploaded_file.read()
+
+            ok, msg = is_safe_text_file(filename, filetype, file_bytes)
+            if not ok:
+                flash(msg, "error")
                 return redirect(f"/edit/Конфиденциальные документы/{doc_id}")
 
-            if not access_level:
-                flash("Уровень доступа является обязательным полем", "error")
-                return redirect(f"/edit/Конфиденциальные документы/{doc_id}")
+            text = file_bytes.decode("utf-8", errors="ignore")
+            text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-            if access_level not in ['Public', 'Internal', 'Confidential', 'Strictly']:
-                flash("Некорректный уровень доступа", "error")
-                return redirect(f"/edit/Конфиденциальные документы/{doc_id}")
+            while "\n\n\n" in text:
+                text = text.replace("\n\n\n", "\n\n")
 
-            # Инициализируем переменные для файла
-            filename = None
-            filetype = 'text/plain'
-            filesize = None
+            content = text
+        else:
+            filesize = len(content.encode("utf-8"))
 
-            # Обрабатываем загруженный файл
-            if uploaded_file and uploaded_file.filename:
-                filename = uploaded_file.filename
-                filetype = uploaded_file.content_type or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+        # Проверка прав
+        cur.execute("SELECT creatorid FROM ConfidentialDocuments WHERE docid = %s", (doc_id,))
+        creator_row = cur.fetchone()
 
-                # Проверяем размер файла (максимум 16MB)
-                uploaded_file.seek(0, 2)
-                filesize = uploaded_file.tell()
-                uploaded_file.seek(0)
-
-                if filesize > 16 * 1024 * 1024:
-                    flash("Файл слишком большой. Максимальный размер 16 МБ", "error")
-                    return redirect(f"/edit/Конфиденциальные документы/{doc_id}")
-
-                # Читаем содержимое файла
-                if filetype.startswith('text/') or filename.endswith(('.txt', '.csv', '.log', '.ini', '.cfg')):
-                    # Текстовые файлы читаем как текст
-                    content = uploaded_file.read().decode('utf-8', errors='ignore')
-                else:
-                    # Бинарные файлы кодируем в base64
-                    import base64
-                    file_data = uploaded_file.read()
-                    content = base64.b64encode(file_data).decode('utf-8')
-            else:
-                # Если файл не загружен, используем текущий текст из формы
-                # Определяем размер текста
-                filesize = len(content.encode('utf-8'))
-
-            # Получаем ID текущего сотрудника
-            cur.execute("SELECT get_current_employee_id();")
-            current_employee_id = cur.fetchone()[0]
-
-            # Проверяем права на редактирование документа
-            # (создатель, security_officer или superadmin)
-            cur.execute("SELECT creatorid FROM ConfidentialDocuments WHERE docid = %s", (doc_id,))
-            creator_result = cur.fetchone()
-
-            if not creator_result:
-                flash("Документ не найден", "error")
-                return redirect("/table/Конфиденциальные документы")
-
-            creator_id = creator_result[0]
-
-            # Проверяем права
-            if current_employee_id != creator_id and session.get('role') not in ['security_officer', 'superadmin']:
-                flash("У вас нет прав для редактирования этого документа", "error")
-                return redirect("/table/Конфиденциальные документы")
-
-            # Обновляем документ с файлом
-            cur.execute("""
-                SELECT fn_update_confidential_document_with_file(
-                    %s, %s, %s, %s, %s, %s, %s
-                );
-            """, (doc_id, doc_title, content, access_level, filename, filetype, filesize))
-
-            conn.commit()
-            conn.close()
-
-            flash("Конфиденциальный документ успешно обновлен", "success")
+        if not creator_row:
+            flash("Документ не найден", "error")
             return redirect("/table/Конфиденциальные документы")
+
+        creator_id = creator_row[0]
+
+        cur.execute("SELECT get_current_employee_id();")
+        current_id = cur.fetchone()[0]
+
+        if current_id != creator_id and session.get('role') not in ['security_officer', 'superadmin']:
+            flash("У вас нет прав для редактирования этого документа", "error")
+            return redirect("/table/Конфиденциальные документы")
+
+        # Обновление
+        cur.execute("""
+            SELECT fn_update_confidential_document_with_file(
+                %s, %s, %s, %s, %s, %s, %s
+            );
+        """, (doc_id, doc_title, content, access_level,
+              filename, filetype, filesize))
+
+        conn.commit()
+        flash("Конфиденциальный документ успешно обновлен", "success")
+        return redirect("/table/Конфиденциальные документы")
 
     except Exception as e:
         if conn:
             conn.rollback()
         logger.error(f"Ошибка в edit_confidential_document: {str(e)}")
-        flash(f"Ошибка при обновлении документа: {str(e)}", "error")
+        flash("Ошибка при обновлении документа", "error")
         return redirect(f"/edit/Конфиденциальные документы/{doc_id}")
+
     finally:
         if conn:
             conn.close()
+
 
 
 # 🔐 Скачивание документа как файла
@@ -4100,7 +4161,7 @@ def confidential_documents_table():
                         <a href="/download/confidential_document/{doc_id}" 
                            class="btn btn-sm btn-primary" 
                            title="Скачать файл">
-                            📥 Скачать
+                             Скачать
                         </a>
                     </div>
                 '''
@@ -4271,7 +4332,6 @@ def too_many_requests(error):
     return render_template('error.html', error=message), 429
 
 if __name__ == "__main__":
-    # В production используйте WSGI сервер (gunicorn, uWSGI)
     app.run(
         host=os.environ.get('FLASK_HOST', '0.0.0.0'),
         port=int(os.environ.get('FLASK_PORT', 59213)),

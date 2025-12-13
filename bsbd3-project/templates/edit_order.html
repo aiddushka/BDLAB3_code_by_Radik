@@ -1,61 +1,101 @@
 {% extends "base.html" %}
 
-{% block title %}Редактировать услугу в заказе{% endblock %}
+{% block title %}Редактировать заказ{% endblock %}
 
 {% block content %}
 <div class="card form-container">
-    <a href="/table/Услуги в заказе" class="btn btn-dark">← Назад к услугам в заказах</a>
-
-    <h1 class="text-center mb-20">Редактирование услуги в заказе</h1>
+    <h1 class="text-center mb-20">Редактирование заказа #{{ order_id }}</h1>
 
     <form method="post">
-        <!-- 🔐 CSRF токен -->
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 
-        {% for col, val in record_data %}
-        <div class="form-group">
-            <label class="form-label">
-                {% if col == 'orderserviceid' %}ID услуги в заказе
-                {% elif col == 'orderid' %}Заказ
-                {% elif col == 'serviceid' %}Услуга
-                {% elif col == 'order_info' %}Информация о заказе
-                {% elif col == 'servicename' %}Название услуги
-                {% elif col == 'categoryname' %}Категория услуги
-                {% else %}{{ col }}{% endif %}
-            </label>
+        {% if record %}
 
-            {% if col == 'orderserviceid' %}
-            <input type="text" class="form-control" value="{{ val }}" readonly>
+            <!-- Всегда видимый ID -->
+            <div class="form-group">
+                <label class="form-label">ID заказа</label>
+                <input type="text" class="form-control" value="{{ record[0] }}" readonly>
+            </div>
 
-            {% elif col == 'orderid' %}
-            <select class="form-control" name="orderid" required>
-                <option value="">Выберите заказ</option>
-                {% for order in orders %}
-                <option value="{{ order[0] }}" {% if order[0] == val %}selected{% endif %}>
-                    {{ order[1] }}
-                </option>
-                {% endfor %}
-            </select>
 
-            {% elif col == 'serviceid' %}
-            <select class="form-control" name="serviceid" required>
-                <option value="">Выберите услугу</option>
-                {% for service in services %}
-                <option value="{{ service[0] }}" {% if service[0] == val %}selected{% endif %}>
-                    {{ service[1] }} ({{ service[2] }})
-                </option>
-                {% endfor %}
-            </select>
+            {% if session.role != "senior_mechanic" %}
+            <!-- ------------------ -->
+            <!--   ВСЯ ФОРМА ДЛЯ АДМИНОВ -->
+            <!-- ------------------ -->
 
-            {% else %}
-            <input type="text" class="form-control" value="{{ val }}" readonly>
+            <div class="form-group">
+                <label class="form-label">Машина *</label>
+                <select class="form-control" name="carid" required>
+                    <option value="">-- Выберите машину --</option>
+                    {% for car in cars %}
+                        <option value="{{ car[0] }}" {% if record[1] == car[0] %}selected{% endif %}>
+                            {{ car[1] }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Сотрудник *</label>
+                <select class="form-control" name="employeeid" required>
+                    <option value="">-- Выберите сотрудника --</option>
+                    {% for employee in employees %}
+                        <option value="{{ employee[0] }}" {% if record[2] == employee[0] %}selected{% endif %}>
+                            {{ employee[1] }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Дата заказа *</label>
+                <input type="date" class="form-control" name="orderdate"
+                       value="{{ record[3].strftime('%Y-%m-%d') if record[3] else '' }}" required>
+            </div>
             {% endif %}
-        </div>
-        {% endfor %}
 
-        <button type="submit" class="btn btn-success" style="width: 100%">
-            💾 Сохранить изменения
-        </button>
+
+            <!-- ------------------ -->
+            <!-- ПОЛЕ СТАТУСА (всегда видно) -->
+            <!-- ------------------ -->
+            <div class="form-group">
+                <label class="form-label">Статус</label>
+                <select class="form-control" name="status">
+                    <option value="">-- Выберите статус --</option>
+                    <option value="Новый" {% if record[4] == 'Новый' %}selected{% endif %}>Новый</option>
+                    <option value="В работе" {% if record[4] == 'В работе' %}selected{% endif %}>В работе</option>
+                    <option value="Завершен" {% if record[4] == 'Завершен' %}selected{% endif %}>Завершен</option>
+                    <option value="Отменен" {% if record[4] == 'Отменен' %}selected{% endif %}>Отменен</option>
+                    <option value="Оплачен" {% if record[4] == 'Оплачен' %}selected{% endif %}>Оплачен</option>
+                </select>
+            </div>
+
+
+            {% if session.role != "senior_mechanic" %}
+            <!-- ------------------ -->
+            <!--   СУММА ДЛЯ АДМИНОВ -->
+            <!-- ------------------ -->
+            <div class="form-group">
+                <label class="form-label">Общая сумма</label>
+                <input type="number" class="form-control" name="totalamount"
+                       value="{{ record[5] if record[5] else '' }}" step="0.01" min="0">
+            </div>
+
+            <!-- Здесь идут услуги — их также можно показывать только админам -->
+            {% endif %}
+
+        {% else %}
+            <p class="text-danger">Данные заказа не найдены</p>
+        {% endif %}
+
+        <div class="mt-4">
+            <button type="submit" class="btn btn-success" style="width: 100%">💾 Сохранить изменения</button>
+        </div>
     </form>
+
+    <div class="text-center mt-20">
+        <a href="/table/Заказы" class="btn btn-dark">← Назад к заказам</a>
+    </div>
 </div>
+
 {% endblock %}

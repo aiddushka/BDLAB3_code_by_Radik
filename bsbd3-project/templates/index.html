@@ -1,25 +1,51 @@
 {% extends "base.html" %}
 {% set hide_nav = True %}
 
-{% block title %}Авторизация{% endblock %}
+{% block title %}CaRRoVV - Главная страница{% endblock %}
 
 {% block content %}
-<div class="center-page">
-    <div class="card center-card">
-        <h2 class="text-center mb-20">Вход в систему</h2>
-        {% if error %}
-        <p class="text-error text-center mb-20">{{ error }}</p>
-        {% endif %}
-        <form method="POST" action="/login">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <div class="form-group">
-                <input class="form-control" name="username" placeholder="Имя пользователя" required>
-            </div>
-            <div class="form-group">
-                <input type="password" class="form-control" name="password" placeholder="Пароль" required>
-            </div>
-            <button type="submit" class="btn btn-success" style="width: 100%">Войти</button>
-        </form>
+<div class="container" style="max-width: 800px;">
+    <!-- Заголовок -->
+    <header style="text-align: center; margin-bottom: 30px;">
+        <h1 style="color: #1a2980; font-size: 2.5rem; margin-bottom: 10px;">CaRRoVV</h1>
+        <p style="color: #666; font-size: 1.2rem;">Профессиональная автомастерская</p>
+    </header>
+
+    <!-- Описание -->
+    <div class="card" style="margin-bottom: 20px;">
+        <h2 style="color: #1a2980; margin-bottom: 15px; text-align: center;">
+            Ремонт автомобилей любой сложности
+        </h2>
+        <p>Мы приглашаем всех владельцев автомобилей пройти техническое обслуживание именно у нас. Мы выполняем ТО по стандартам заводов-изготовителей с использованием оригинальных запчастей и расходников, при этом обеспечивая разумную стоимость.</p>
+        <p>Все наши работы абсолютно прозрачны: вы можете наблюдать за процессом ремонта, ознакомиться с деталями до установки и даже присутствовать при выполнении работ.</p>
+        <p>Техническое обслуживание проводится только с использованием сертифицированных комплектующих, без скрытия их каталожных номеров или технических характеристик.</p>
+    </div>
+
+    <!-- Услуги -->
+    <div class="card" style="margin-bottom: 20px;">
+        <h2 style="color: #1a2980; margin-bottom: 15px; text-align: center;">
+            Наши направления ремонта
+        </h2>
+        <ul style="list-style: none; padding-left: 0;">
+            <li><strong>• Техническое обслуживание.</strong></li>
+            <li><strong>• Ремонт двигателя.</strong></li>
+            <li><strong>• Ремонт ходовой части.</strong></li>
+            <li><strong>• Электрика и электроника.</strong></li>
+            <li><strong>• Диагностика.</strong></li>
+            <li><strong>• Кузовной ремонт.</strong></li>
+            <li><strong>• Системы охлаждения и отопления.</strong></li>
+            <li><strong>• Шиномонтаж и сезонное обслуживание.</strong></li>
+        </ul>
+    </div>
+
+    <!-- Кнопка входа -->
+    <div style="text-align: center; margin-top: 30px;">
+        <a href="/login" class="btn btn-primary" style="padding: 12px 30px; font-size: 16px;">
+            Войти в систему управления
+        </a>
+        <p style="margin-top: 10px; color: #666; font-size: 0.9rem;">
+            Для сотрудников автосервиса
+        </p>
     </div>
 </div>
 {% endblock %}
